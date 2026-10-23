@@ -1,30 +1,41 @@
-import "dotenv/config";
-import express from "express";
-import { prisma } from "./lib/prisma.js";
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+import app from "./app.js";
+import { disconnectDatabase } from "./lib/prisma.js";
 
-app.use(express.json());
+const PORT = Number(process.env.PORT) || 3000;
 
-app.get("/health", async (_req, res) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-
-    res.status(200).json({
-      status: "ok",
-      database: "connected",
-    });
-  } catch (error) {
-    console.error("Database connection failed:", error);
-
-    res.status(500).json({
-      status: "error",
-      database: "disconnected",
-    });
-  }
-});
-
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+let isShuttingDown = false;
+
+function shutdown() {
+  if (isShuttingDown) return;
+
+  isShuttingDown = true;
+  console.log("Shutting down server...");
+
+  server.close(async (error) => {
+    console.log("HTTP server close callback executed");
+
+    if (error) {
+      console.error("Error closing server:", error);
+      process.exitCode = 1;
+    }
+
+    try {
+      console.log("Closing database connections...");
+
+      await disconnectDatabase();
+
+      console.log("Database connections closed");
+    } catch (dbError) {
+      console.error("Error closing database:", dbError);
+      process.exitCode = 1;
+    }
+  });
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

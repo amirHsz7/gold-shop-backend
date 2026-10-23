@@ -12,22 +12,30 @@ enum UserRole {
   ADMIN
 }
 
+enum OtpPurpose {
+  REGISTER
+  LOGIN
+}
+
 model User {
   id        String   @id @default(cuid())
   mobile    String   @unique
+  fullName  String
   role      UserRole @default(CUSTOMER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Otp {
-  id        String   @id @default(cuid())
-  mobile    String
+  id        String     @id @default(cuid())
+  mobile    String     @unique
   codeHash  String
+  purpose   OtpPurpose
+  fullName  String?
   expiresAt DateTime
-  attempts  Int      @default(0)
-  createdAt DateTime @default(now())
+  attempts  Int        @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
-  @@index([mobile])
   @@index([expiresAt])
 }
