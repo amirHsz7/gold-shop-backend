@@ -1,7 +1,7 @@
 
 import { z } from "zod";
 
-const mobileSchema = z
+export const mobileSchema = z
   .string()
   .trim()
   .regex(/^09\d{9}$/, "شماره موبایل باید ۱۱ رقم و با 09 شروع شود");
