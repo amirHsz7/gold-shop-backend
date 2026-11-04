@@ -6,11 +6,15 @@ import { errorHandler } from "./middlewares/error.middleware.js";
 import { notFoundHandler } from "./middlewares/not-found.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
 import userRoutes from "./routes/user.routes.js";
-import { storage } from "./lib/storage.js";
 
+import { storage } from "./lib/storage.js";
+import { uploadSingleImage } from "./middlewares/upload.middleware.js";
+
+import { saveImage } from "./services/image.service.js";
 import productRoutes from "./routes/product.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
 import collectionRoutes from "./routes/collection.routes.js";
+import homeRoutes from "./routes/home.routes.js";
 
 const app = express();
 
@@ -33,8 +37,8 @@ app.use("/categories", categoryRoutes);
 
 app.use("/collections", collectionRoutes);
 
-import { uploadSingleImage } from "./middlewares/upload.middleware.js";
-import { saveImage } from "./services/image.service.js";
+app.use("/home", homeRoutes);
+
 
 app.post("/_test-upload", uploadSingleImage("image"), async (req, res, next) => {
   try {

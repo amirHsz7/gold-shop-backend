@@ -10,7 +10,13 @@ export const listProductsQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((value) => value === "true")
     .optional(),
-  sort: z.enum(["newest", "weight_asc", "weight_desc"]).default("newest"),
+  hasDiscount: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  sort: z
+    .enum(["newest", "weight_asc", "weight_desc", "discount"])
+    .default("newest"),
 });
 
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;

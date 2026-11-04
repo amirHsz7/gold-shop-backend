@@ -12,10 +12,11 @@ const publicProductSelect = {
   weight: true,
   fee: true,
   feeAmount: true,
+  discountPercent: true, // جدید: تخفیف
   stock: true,
   isFeatured: true,
   createdAt: true,
-  // جدید: دسته همراه با والدش (برای breadcrumb)
+  // دسته همراه با والدش (برای breadcrumb)
   category: {
     select: {
       id: true,
@@ -45,22 +46,33 @@ const toPublicProduct = ({ images, ...product }: ProductRow) => ({
   })),
 });
 
+// جدید: تخفیف. هر مقدار یک آرایه است تا بشود چند فیلد را با هم مرتب کرد
 const orderByMap = {
-  newest: { createdAt: "desc" },
-  weight_asc: { weight: "asc" },
-  weight_desc: { weight: "desc" },
+  newest: [{ createdAt: "desc" }],
+  weight_asc: [{ weight: "asc" }, { createdAt: "desc" }],
+  weight_desc: [{ weight: "desc" }, { createdAt: "desc" }],
+  discount: [{ discountPercent: "desc" }, { createdAt: "desc" }],
 } satisfies Record<
   ListProductsQuery["sort"],
-  Prisma.ProductOrderByWithRelationInput
+  Prisma.ProductOrderByWithRelationInput[]
 >;
 
 export const listProducts = async (query: ListProductsQuery) => {
-  const { page, limit, category, collection, search, featured, sort } = query;
+  const {
+    page,
+    limit,
+    category,
+    collection,
+    search,
+    featured,
+    hasDiscount, // جدید: تخفیف
+    sort,
+  } = query;
 
   const where: Prisma.ProductWhereInput = {
     isActive: true,
     deletedAt: null,
-    // جدید: اگر دسته‌ی والد انتخاب شود، محصولات زیردسته‌هایش هم می‌آیند
+    // اگر دسته‌ی والد انتخاب شود، محصولات زیردسته‌هایش هم می‌آیند
     category: {
       isActive: true,
       ...(category && {
@@ -69,6 +81,7 @@ export const listProducts = async (query: ListProductsQuery) => {
     },
     ...(collection && { collection: { isActive: true, slug: collection } }),
     ...(featured !== undefined && { isFeatured: featured }),
+    ...(hasDiscount && { discountPercent: { gt: 0 } }), // جدید: تخفیف
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -113,7 +126,7 @@ export const getProductBySlug = async (slug: string) => {
   return product ? toPublicProduct(product) : null;
 };
 
-// جدید: لیست دسته‌ها به‌صورت درختی (دسته‌ی اصلی ← زیردسته‌ها)
+// لیست دسته‌ها به‌صورت درختی (دسته‌ی اصلی ← زیردسته‌ها)
 export const listCategories = async () => {
   const categories = await prisma.category.findMany({
     where: { isActive: true },

@@ -95,6 +95,8 @@ model Product {
   fee       Decimal @default(0) @db.Decimal(6, 3) // درصد اجرت از وزن (7 یعنی ۷٪)
   feeAmount Decimal @default(0) @db.Decimal(15, 0) // اجرت ریالی
 
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+
   stock      Int       @default(1)
   isActive   Boolean   @default(true)
   isFeatured Boolean   @default(false)
@@ -120,4 +122,50 @@ model ProductImage {
   createdAt DateTime @default(now())
 
   @@index([productId, sortOrder])
+}
+
+enum HomeSectionType {
+  SLIDER
+  BANNERS
+  PRODUCTS
+  CATEGORIES
+  COLLECTIONS
+}
+
+model HomeSection {
+  id        String          @id @default(cuid())
+  type      HomeSectionType
+  title     String?
+  subtitle  String?
+  config    Json?
+  sortOrder Int             @default(0)
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  items HomeSectionItem[]
+
+  @@index([isActive, sortOrder])
+}
+
+model HomeSectionItem {
+  id        String      @id @default(cuid())
+  sectionId String
+  section   HomeSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  imageKey       String
+  mobileImageKey String?
+  alt            String?
+  title          String?
+  subtitle       String?
+  buttonText     String?
+  linkUrl        String?
+  sortOrder      Int       @default(0)
+  isActive       Boolean   @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([sectionId, isActive, sortOrder])
 }
