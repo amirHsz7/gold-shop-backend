@@ -2,18 +2,16 @@ import { prisma } from "../lib/prisma.js";
 import { storage } from "../lib/storage.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import type { ListProductsQuery } from "../schemas/product.schema.js";
+import { getRatingsByProductIds } from "./comment.service.js";
 
 const publicProductSelect = {
   id: true,
   name: true,
   slug: true,
-  sku: true,
   description: true,
-  weight: true,
-  fee: true,
-  feeAmount: true,
-  discountPercent: true, // جدید: تخفیف
-  stock: true,
+  minWeight: true,
+  maxWeight: true,
+  discountPercent: true,
   isFeatured: true,
   createdAt: true,
   // دسته همراه با والدش (برای breadcrumb)
@@ -26,6 +24,20 @@ const publicProductSelect = {
     },
   },
   collection: { select: { id: true, name: true, slug: true } },
+  // وزن‌های مختلف محصول، هرکدام با موجودی خودش
+  variants: {
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { weight: "asc" }],
+    select: {
+      id: true,
+      label: true,
+      sku: true,
+      weight: true,
+      fee: true,
+      feeAmount: true,
+      stock: true,
+    },
+  },
   images: {
     select: { id: true, key: true, alt: true },
     orderBy: { sortOrder: "asc" },
@@ -36,21 +48,36 @@ type ProductRow = Prisma.ProductGetPayload<{
   select: typeof publicProductSelect;
 }>;
 
-// کلید عکس‌ها را به آدرس تبدیل می‌کند
-const toPublicProduct = ({ images, ...product }: ProductRow) => ({
-  ...product,
-  images: images.map((image) => ({
-    id: image.id,
-    alt: image.alt,
-    url: storage.getUrl(image.key),
-  })),
-});
+const emptyRating = { average: 0, count: 0 };
 
-// جدید: تخفیف. هر مقدار یک آرایه است تا بشود چند فیلد را با هم مرتب کرد
+// کلید عکس‌ها را به آدرس تبدیل می‌کند و موجودی کل را حساب می‌کند
+const toPublicProduct = (
+  { images, ...product }: ProductRow,
+  rating = emptyRating,
+) => {
+  const totalStock = product.variants.reduce(
+    (sum, variant) => sum + variant.stock,
+    0,
+  );
+
+  return {
+    ...product,
+    totalStock,
+    inStock: totalStock > 0,
+    rating,
+    images: images.map((image) => ({
+      id: image.id,
+      alt: image.alt,
+      url: storage.getUrl(image.key),
+    })),
+  };
+};
+
+// مرتب‌سازی وزن بر اساس کمترین و بیشترین وزن variantها
 const orderByMap = {
   newest: [{ createdAt: "desc" }],
-  weight_asc: [{ weight: "asc" }, { createdAt: "desc" }],
-  weight_desc: [{ weight: "desc" }, { createdAt: "desc" }],
+  weight_asc: [{ minWeight: "asc" }, { createdAt: "desc" }],
+  weight_desc: [{ maxWeight: "desc" }, { createdAt: "desc" }],
   discount: [{ discountPercent: "desc" }, { createdAt: "desc" }],
 } satisfies Record<
   ListProductsQuery["sort"],
@@ -65,13 +92,15 @@ export const listProducts = async (query: ListProductsQuery) => {
     collection,
     search,
     featured,
-    hasDiscount, // جدید: تخفیف
+    hasDiscount,
     sort,
   } = query;
 
   const where: Prisma.ProductWhereInput = {
     isActive: true,
     deletedAt: null,
+    // محصول بدون variant فعال نمایش داده نمی‌شود
+    variants: { some: { isActive: true } },
     // اگر دسته‌ی والد انتخاب شود، محصولات زیردسته‌هایش هم می‌آیند
     category: {
       isActive: true,
@@ -81,7 +110,7 @@ export const listProducts = async (query: ListProductsQuery) => {
     },
     ...(collection && { collection: { isActive: true, slug: collection } }),
     ...(featured !== undefined && { isFeatured: featured }),
-    ...(hasDiscount && { discountPercent: { gt: 0 } }), // جدید: تخفیف
+    ...(hasDiscount && { discountPercent: { gt: 0 } }),
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -101,8 +130,14 @@ export const listProducts = async (query: ListProductsQuery) => {
     prisma.product.count({ where }),
   ]);
 
+  const ratings = await getRatingsByProductIds(
+    products.map((product) => product.id),
+  );
+
   return {
-    items: products.map(toPublicProduct),
+    items: products.map((product) =>
+      toPublicProduct(product, ratings.get(product.id)),
+    ),
     pagination: {
       page,
       limit,
@@ -118,12 +153,17 @@ export const getProductBySlug = async (slug: string) => {
       slug,
       isActive: true,
       deletedAt: null,
+      variants: { some: { isActive: true } },
       category: { isActive: true },
     },
     select: publicProductSelect,
   });
 
-  return product ? toPublicProduct(product) : null;
+  if (!product) return null;
+
+  const ratings = await getRatingsByProductIds([product.id]);
+
+  return toPublicProduct(product, ratings.get(product.id));
 };
 
 // لیست دسته‌ها به‌صورت درختی (دسته‌ی اصلی ← زیردسته‌ها)

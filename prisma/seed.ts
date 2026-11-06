@@ -1,4 +1,6 @@
+import "dotenv/config";
 import { prisma, disconnectDatabase } from "../src/lib/prisma.js";
+import { syncProductWeightRange } from "../src/services/variant.service.js";
 
 const categoryTree = [
   {
@@ -32,16 +34,27 @@ const collections = [
   { name: "کالکشن قدیمی", slug: "old-collection", isActive: false },
 ];
 
+type SeedVariant = {
+  weight: number;
+  fee: number; // درصد اجرت
+  feeAmount: number; // اجرت ریالی
+  stock?: number;
+  label?: string;
+};
+
 type SeedProduct = {
   name: string;
   slug: string;
   category: string; // slug دسته
   collection?: string; // slug کالکشن (اختیاری)
+  // اولین وزن محصول
   weight: number;
-  fee: number; // درصد اجرت
-  feeAmount: number; // اجرت ریالی
-  discountPercent?: number;
+  fee: number;
+  feeAmount: number;
   stock?: number;
+  // وزن‌های دیگر همین محصول
+  extraVariants?: SeedVariant[];
+  discountPercent?: number;
   isFeatured?: boolean;
   isActive?: boolean;
   deleted?: boolean;
@@ -61,9 +74,38 @@ const products: SeedProduct[] = [
   { name: "آویز چشم نظر", slug: "evil-eye-pendant", category: "pendant", collection: "daily", weight: 1.2, fee: 10, feeAmount: 0 },
   { name: "حلقه ازدواج کلاسیک", slug: "classic-wedding-ring", category: "wedding-ring", collection: "bride", weight: 3.9, fee: 8, feeAmount: 0, isFeatured: true },
   { name: "حلقه ازدواج طرح‌دار", slug: "patterned-wedding-ring", category: "wedding-ring", collection: "bride", weight: 4.6, fee: 0, feeAmount: 2400000, discountPercent: 10 },
-  // محصول مستقیم روی دسته‌ی اصلی (بدون زیردسته) و دارای هر دو اجرت
-  { name: "انگشتر نگین‌دار", slug: "gemstone-ring", category: "ring", collection: "spring", weight: 4.1, fee: 9, feeAmount: 500000 },
+  // محصول مستقیم روی دسته‌ی اصلی، با چند وزن
+  {
+    name: "انگشتر نگین‌دار",
+    slug: "gemstone-ring",
+    category: "ring",
+    collection: "spring",
+    weight: 4.1,
+    fee: 9,
+    feeAmount: 500000,
+    extraVariants: [
+      { weight: 4.8, fee: 9, feeAmount: 600000, label: "سایز ۱۲" },
+      { weight: 5.5, fee: 8, feeAmount: 700000, label: "سایز ۱۴" },
+    ],
+  },
   { name: "انگشتر مردانه", slug: "mens-ring", category: "ring", weight: 7.2, fee: 7, feeAmount: 0 },
+  // مثال تو: ۱۰ عدد با ۴ وزن مختلف
+  {
+    name: "انگشتر کارتیه",
+    slug: "cartier-ring",
+    category: "ring",
+    collection: "daily",
+    weight: 2.56,
+    fee: 7,
+    feeAmount: 0,
+    stock: 4,
+    isFeatured: true,
+    extraVariants: [
+      { weight: 2.54, fee: 7, feeAmount: 0, stock: 1 },
+      { weight: 2.63, fee: 7, feeAmount: 0, stock: 1 },
+      { weight: 2.5, fee: 7, feeAmount: 0, stock: 4 },
+    ],
+  },
   { name: "گوشواره حلقه‌ای", slug: "hoop-earrings", category: "earring", collection: "daily", weight: 2.6, fee: 8, feeAmount: 0 },
   { name: "گوشواره میخی", slug: "stud-earrings", category: "earring", weight: 0.9, fee: 0, feeAmount: 900000, discountPercent: 25 },
   // این دو نباید توی API عمومی دیده بشن
@@ -104,33 +146,50 @@ async function main() {
     collectionIds.set(item.slug, row.id);
   }
 
-  // محصولات
+  // محصولات و وزن‌هایشان
   for (const [index, item] of products.entries()) {
     const data = {
       name: item.name,
-      sku: `GS-${String(index + 1).padStart(4, "0")}`,
       description: `${item.name} با طراحی مدرن و کیفیت بالا، ساخته‌شده از طلای ۱۸ عیار.`,
       categoryId: categoryIds.get(item.category)!,
       collectionId: item.collection ? collectionIds.get(item.collection)! : null,
-      weight: item.weight,
-      fee: item.fee,
-      feeAmount: item.feeAmount,
       discountPercent: item.discountPercent ?? 0,
-      stock: item.stock ?? 3,
       isFeatured: item.isFeatured ?? false,
       isActive: item.isActive ?? true,
       deletedAt: item.deleted ? new Date() : null,
     };
 
-    await prisma.product.upsert({
+    const product = await prisma.product.upsert({
       where: { slug: item.slug },
       update: data,
       create: { slug: item.slug, ...data },
     });
+
+    // variantها هر بار از نو ساخته می‌شوند
+    await prisma.productVariant.deleteMany({ where: { productId: product.id } });
+
+    const variants: SeedVariant[] = [
+      { weight: item.weight, fee: item.fee, feeAmount: item.feeAmount, stock: item.stock },
+      ...(item.extraVariants ?? []),
+    ];
+
+    await prisma.productVariant.createMany({
+      data: variants.map((variant, variantIndex) => ({
+        productId: product.id,
+        sku: `GS-${String(index + 1).padStart(4, "0")}-${variantIndex + 1}`,
+        label: variant.label,
+        weight: variant.weight,
+        fee: variant.fee,
+        feeAmount: variant.feeAmount,
+        stock: variant.stock ?? 3,
+        sortOrder: variantIndex,
+      })),
+    });
+
+    await syncProductWeightRange(product.id);
   }
 
-
-  // صفحه اصلی
+  // صفحه‌ی اصلی: هر بار از نو ساخته می‌شود (فقط بخش‌های home پاک می‌شوند)
   await prisma.homeSection.deleteMany();
 
   await prisma.homeSection.create({
@@ -139,42 +198,19 @@ async function main() {
       sortOrder: 1,
       items: {
         create: [
-          {
-            imageKey: "home/slide-1.webp",
-            title: "کالکشن بهار",
-            subtitle: "طلای ۱۸ عیار با طراحی مدرن",
-            buttonText: "مشاهده",
-            linkUrl: "/products?collection=spring",
-            sortOrder: 1,
-          },
-          {
-            imageKey: "home/slide-2.webp",
-            title: "تخفیف ویژه",
-            buttonText: "مشاهده تخفیف‌ها",
-            linkUrl: "/products?hasDiscount=true",
-            sortOrder: 2,
-          },
+          { imageKey: "home/slide-1.webp", title: "کالکشن بهار", subtitle: "طلای ۱۸ عیار با طراحی مدرن", buttonText: "مشاهده", linkUrl: "/products?collection=spring", sortOrder: 1 },
+          { imageKey: "home/slide-2.webp", title: "تخفیف ویژه", buttonText: "مشاهده تخفیف‌ها", linkUrl: "/products?hasDiscount=true", sortOrder: 2 },
         ],
       },
     },
   });
 
   await prisma.homeSection.create({
-    data: {
-      type: "CATEGORIES",
-      title: "دسته‌بندی‌ها",
-      sortOrder: 2,
-      config: { limit: 6 },
-    },
+    data: { type: "CATEGORIES", title: "دسته‌بندی‌ها", sortOrder: 2, config: { limit: 6 } },
   });
 
   await prisma.homeSection.create({
-    data: {
-      type: "PRODUCTS",
-      title: "محصولات ویژه",
-      sortOrder: 3,
-      config: { source: "featured", limit: 8 },
-    },
+    data: { type: "PRODUCTS", title: "محصولات ویژه", sortOrder: 3, config: { source: "featured", limit: 8 } },
   });
 
   await prisma.homeSection.create({
@@ -183,31 +219,15 @@ async function main() {
       sortOrder: 4,
       items: {
         create: [
-          {
-            imageKey: "home/banner-1.webp",
-            title: "ست عروس",
-            linkUrl: "/products?collection=bride",
-            sortOrder: 1,
-          },
-          {
-            imageKey: "home/banner-2.webp",
-            title: "هدیه‌های ویژه",
-            linkUrl: "/products?category=pendant",
-            sortOrder: 2,
-          },
+          { imageKey: "home/banner-1.webp", title: "ست عروس", linkUrl: "/products?collection=bride", sortOrder: 1 },
+          { imageKey: "home/banner-2.webp", title: "هدیه‌های ویژه", linkUrl: "/products?category=pendant", sortOrder: 2 },
         ],
       },
     },
   });
 
   await prisma.homeSection.create({
-    data: {
-      type: "PRODUCTS",
-      title: "پیشنهاد ویژه",
-      subtitle: "محصولات دارای تخفیف",
-      sortOrder: 5,
-      config: { source: "discount", limit: 8 },
-    },
+    data: { type: "PRODUCTS", title: "پیشنهاد ویژه", subtitle: "محصولات دارای تخفیف", sortOrder: 5, config: { source: "discount", limit: 8 } },
   });
 
   await prisma.homeSection.create({
@@ -215,13 +235,19 @@ async function main() {
   });
 
   await prisma.homeSection.create({
-    data: {
-      type: "PRODUCTS",
-      title: "جدیدترین‌ها",
-      sortOrder: 7,
-      config: { source: "newest", limit: 8 },
-    },
+    data: { type: "PRODUCTS", title: "جدیدترین‌ها", sortOrder: 7, config: { source: "newest", limit: 8 } },
   });
+
+  // ادمین (فقط اگر ADMIN_MOBILE توی .env تنظیم شده باشد)
+  const adminMobile = process.env.ADMIN_MOBILE;
+
+  if (adminMobile) {
+    await prisma.user.upsert({
+      where: { mobile: adminMobile },
+      update: { role: "ADMIN" },
+      create: { mobile: adminMobile, fullName: "ادمین", role: "ADMIN" },
+    });
+  }
 
   console.log(
     `Seed done: ${categoryIds.size} categories, ${collectionIds.size} collections, ${products.length} products`,

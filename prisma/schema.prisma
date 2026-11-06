@@ -18,12 +18,13 @@ enum OtpPurpose {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  mobile    String   @unique
+  id        String    @id @default(cuid())
+  mobile    String    @unique
   fullName  String
-  role      UserRole @default(CUSTOMER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  role      UserRole  @default(CUSTOMER)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  comments  Comment[]
 }
 
 model Otp {
@@ -41,6 +42,8 @@ model Otp {
 }
 
 // ----------------------------------------
+
+// ───────── دسته‌بندی و کالکشن ─────────
 
 model Category {
   id        String   @id @default(cuid())
@@ -78,11 +81,12 @@ model Collection {
   @@index([isActive, sortOrder])
 }
 
+// ───────── محصول ─────────
+
 model Product {
   id          String  @id @default(cuid())
   name        String
   slug        String  @unique
-  sku         String? @unique
   description String? @db.Text
 
   categoryId String
@@ -91,25 +95,44 @@ model Product {
   collectionId String?
   collection   Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
 
-  weight    Decimal @db.Decimal(10, 3) // وزن (گرم)
-  fee       Decimal @default(0) @db.Decimal(6, 3) // درصد اجرت از وزن (7 یعنی ۷٪)
-  feeAmount Decimal @default(0) @db.Decimal(15, 0) // اجرت ریالی
-
+  minWeight       Decimal @default(0) @db.Decimal(10, 3)
+  maxWeight       Decimal @default(0) @db.Decimal(10, 3)
   discountPercent Decimal @default(0) @db.Decimal(5, 2)
 
-  stock      Int       @default(1)
   isActive   Boolean   @default(true)
   isFeatured Boolean   @default(false)
   deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
+  variants ProductVariant[]
+  images   ProductImage[]
+  comments Comment[]
+
+  @@index([categoryId, isActive])
+  @@index([collectionId, isActive])
+  @@index([isFeatured, isActive])
+}
+
+// هر ردیف = یک وزن مشخص با تعداد موجودی همان وزن
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  label     String?
+  sku       String?  @unique
+  weight    Decimal  @db.Decimal(10, 3) // گرم
+  fee       Decimal  @default(0) @db.Decimal(6, 3) // درصد اجرت از وزن
+  feeAmount Decimal  @default(0) @db.Decimal(15, 0) // اجرت ریالی
+  stock     Int      @default(1)
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  images ProductImage[]
-
-  @@index([categoryId, isActive])
-  @@index([isFeatured, isActive])
-  @@index([collectionId, isActive])
+  @@unique([productId, weight])
+  @@index([productId, isActive, sortOrder])
 }
 
 model ProductImage {
@@ -123,6 +146,40 @@ model ProductImage {
 
   @@index([productId, sortOrder])
 }
+
+// ───────── کامنت و امتیاز ─────────
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Comment {
+  id String @id @default(cuid())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
+
+  body      String        @db.Text
+  rating    Int?
+  status    CommentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([productId, parentId, status, createdAt])
+  @@index([parentId])
+  @@index([userId])
+}
+
+// ───────── صفحه‌ی اصلی ─────────
 
 enum HomeSectionType {
   SLIDER
@@ -168,4 +225,34 @@ model HomeSectionItem {
   updatedAt      DateTime  @updatedAt
 
   @@index([sectionId, isActive, sortOrder])
+}
+
+// ───────── تماس با ما و درباره‌ی ما ─────────
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  fullName  String
+  mobile    String
+  email     String?
+  subject   String
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isRead, createdAt])
+}
+
+model AboutPage {
+  id           String   @id @default("main")
+  title        String
+  content      String   @db.Text
+  imageUrl     String?
+  foundedYear  Int?
+  address      String?
+  phone        String?
+  email        String?
+  workingHours String?
+  mapUrl       String?
+  updatedAt    DateTime @updatedAt
 }

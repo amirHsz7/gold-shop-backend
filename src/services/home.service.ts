@@ -1,23 +1,15 @@
-import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { storage } from "../lib/storage.js";
 import type { Prisma } from "../generated/prisma/client.js";
+import {
+  listSectionConfigSchema,
+  productsSectionConfigSchema,
+} from "../schemas/home.schema.js";
 import {
   listCategories,
   listCollections,
   listProducts,
 } from "./product.service.js";
-
-const productsConfigSchema = z.object({
-  source: z.enum(["featured", "newest", "discount"]).default("newest"),
-  limit: z.number().int().min(1).max(24).default(8),
-  category: z.string().optional(),
-  collection: z.string().optional(),
-});
-
-const listConfigSchema = z.object({
-  limit: z.number().int().min(1).max(24).default(12),
-});
 
 // فقط آیتم‌های فعال و داخل بازه‌ی زمانی نمایش
 const activeItemsWhere = (date: Date): Prisma.HomeSectionItemWhereInput => ({
@@ -86,7 +78,9 @@ export const getHome = async () => {
       }
 
       case "PRODUCTS": {
-        const config = productsConfigSchema.safeParse(section.config ?? {});
+        const config = productsSectionConfigSchema.safeParse(
+          section.config ?? {},
+        );
         if (!config.success) return null;
 
         const { source, limit, category, collection } = config.data;
@@ -107,7 +101,7 @@ export const getHome = async () => {
       }
 
       case "CATEGORIES": {
-        const config = listConfigSchema.safeParse(section.config ?? {});
+        const config = listSectionConfigSchema.safeParse(section.config ?? {});
         if (!config.success) return null;
 
         const categories = await listCategories();
@@ -117,7 +111,7 @@ export const getHome = async () => {
       }
 
       case "COLLECTIONS": {
-        const config = listConfigSchema.safeParse(section.config ?? {});
+        const config = listSectionConfigSchema.safeParse(section.config ?? {});
         if (!config.success) return null;
 
         const collections = await listCollections();
