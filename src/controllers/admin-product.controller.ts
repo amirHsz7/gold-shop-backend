@@ -4,6 +4,7 @@ import {
   createProduct,
   deleteProductImage,
   getProductForAdmin,
+  listProductsForAdmin,
   softDeleteProduct,
   updateProduct,
 } from "../services/admin-product.service.js";
@@ -147,6 +148,16 @@ export const deleteAdminProductImage: RequestHandler = async (
   }
 };
 
+
+export const listAdminProducts: RequestHandler = async (_req, res, next) => {
+  try {
+    const result = await listProductsForAdmin(res.locals.query);
+
+    res.status(200).json({ status: "success", data: result });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // example
 

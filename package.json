@@ -8,7 +8,8 @@
     "seed": "tsx prisma/seed.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "postinstall": "prisma skills sync || exit 0"
+    "postinstall": "prisma skills sync || exit 0",
+    "demo:clear": "tsx prisma/clear-demo.ts"
   },
   "keywords": [],
   "author": "",

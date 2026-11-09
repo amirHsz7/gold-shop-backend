@@ -7,6 +7,7 @@ import {
 } from "./image.service.js";
 import type {
   CreateProductInput,
+  ListAdminProductsQuery,
   UpdateProductInput,
 } from "../schemas/admin-product.schema.js";
 
@@ -92,6 +93,127 @@ export const getProductForAdmin = async (id: string) => {
       ...image,
       url: storage.getUrl(key),
     })),
+  };
+};
+
+// ───────── لیست محصولات برای ادمین ─────────
+
+const adminListOrderBy = {
+  newest: [{ createdAt: "desc" }],
+  oldest: [{ createdAt: "asc" }],
+  name: [{ name: "asc" }],
+  updated: [{ updatedAt: "desc" }],
+} satisfies Record<
+  ListAdminProductsQuery["sort"],
+  Prisma.ProductOrderByWithRelationInput[]
+>;
+
+export const listProductsForAdmin = async (query: ListAdminProductsQuery) => {
+  const {
+    page,
+    limit,
+    search,
+    categoryId,
+    collectionId,
+    status,
+    stock,
+    hasDiscount,
+    sort,
+  } = query;
+
+  const and: Prisma.ProductWhereInput[] = [];
+
+  // اگر دسته‌ی والد انتخاب شود، محصولات زیردسته‌هایش هم می‌آیند
+  if (categoryId) {
+    and.push({ OR: [{ categoryId }, { category: { parentId: categoryId } }] });
+  }
+
+  if (search) {
+    and.push({
+      OR: [
+        { name: { contains: search, mode: "insensitive" } },
+        { slug: { contains: search, mode: "insensitive" } },
+        {
+          variants: {
+            some: { sku: { contains: search, mode: "insensitive" } },
+          },
+        },
+      ],
+    });
+  }
+
+  const hasAvailableStock: Prisma.ProductWhereInput = {
+    variants: { some: { isActive: true, stock: { gt: 0 } } },
+  };
+
+  if (stock === "in") and.push(hasAvailableStock);
+  if (stock === "out") and.push({ NOT: hasAvailableStock });
+
+  // برخلاف API عمومی، محصول غیرفعال و بدون وزن فعال هم نمایش داده می‌شود
+  const where: Prisma.ProductWhereInput = {
+    deletedAt: null,
+    ...(collectionId && { collectionId }),
+    ...(status && { isActive: status === "active" }),
+    ...(hasDiscount && { discountPercent: { gt: 0 } }),
+    ...(and.length > 0 && { AND: and }),
+  };
+
+  const [products, total] = await prisma.$transaction([
+    prisma.product.findMany({
+      where,
+      orderBy: adminListOrderBy[sort],
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isActive: true,
+        isFeatured: true,
+        discountPercent: true,
+        minWeight: true,
+        maxWeight: true,
+        createdAt: true,
+        updatedAt: true,
+        category: { select: { id: true, name: true } },
+        collection: { select: { id: true, name: true } },
+        variants: { select: { stock: true, isActive: true } },
+        images: {
+          orderBy: { sortOrder: "asc" },
+          take: 1,
+          select: { key: true },
+        },
+      },
+    }),
+    prisma.product.count({ where }),
+  ]);
+
+  return {
+    items: products.map(({ variants, images, ...product }) => {
+      const activeVariants = variants.filter((variant) => variant.isActive);
+      const totalStock = activeVariants.reduce(
+        (sum, variant) => sum + variant.stock,
+        0,
+      );
+
+      return {
+        ...product,
+        discountPercent: product.discountPercent.toNumber(),
+        minWeight: product.minWeight.toNumber(),
+        maxWeight: product.maxWeight.toNumber(),
+        variantCount: variants.length,
+        activeVariantCount: activeVariants.length,
+        totalStock,
+        inStock: totalStock > 0,
+        imageUrl: images[0] ? storage.getUrl(images[0].key) : null,
+      };
+    }),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
   };
 };
 

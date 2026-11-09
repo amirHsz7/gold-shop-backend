@@ -18,8 +18,10 @@ import homeRoutes from "./routes/home.routes.js";
 import { authMiddleware } from "./middlewares/auth.middleware.js";
 import { adminMiddleware } from "./middlewares/admin.middleware.js";
 
+// admin
 import adminProductRoutes from "./routes/admin-product.routes.js";
 import adminCategoryRoutes from "./routes/admin-category.routes.js";
+import adminCollectionRoutes from "./routes/admin-collection.routes.js";
 
 const app = express();
 
@@ -58,6 +60,14 @@ app.use(
   authMiddleware,
   adminMiddleware,
   adminCategoryRoutes,
+);
+
+
+app.use(
+  "/admin/collections",
+  authMiddleware,
+  adminMiddleware,
+  adminCollectionRoutes,
 );
 
 app.post("/_test-upload", uploadSingleImage("image"), async (req, res, next) => {

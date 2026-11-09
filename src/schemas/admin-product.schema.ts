@@ -157,5 +157,25 @@ export const updateProductSchema = z.object({
     .refine(hasUniqueIds, IDS_MESSAGE),
 });
 
+const booleanQuery = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true");
+
+export const listAdminProductsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().trim().min(1).max(100).optional(), // نام، اسلاگ یا SKU
+  categoryId: idSchema.optional(),
+  collectionId: idSchema.optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+  stock: z.enum(["in", "out"]).optional(),
+  hasDiscount: booleanQuery.optional(),
+  sort: z.enum(["newest", "oldest", "name", "updated"]).default("newest"),
+});
+
+export type ListAdminProductsQuery = z.infer<
+  typeof listAdminProductsQuerySchema
+>;
+
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
