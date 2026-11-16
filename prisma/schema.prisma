@@ -171,12 +171,14 @@ model Comment {
   body      String        @db.Text
   rating    Int?
   status    CommentStatus @default(PENDING)
+  showOnHome Boolean      @default(false)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
   @@index([productId, parentId, status, createdAt])
   @@index([parentId])
   @@index([userId])
+  @@index([showOnHome, status])
 }
 
 // ───────── صفحه‌ی اصلی ─────────
@@ -187,6 +189,8 @@ enum HomeSectionType {
   PRODUCTS
   CATEGORIES
   COLLECTIONS
+  TESTIMONIALS
+  MAP
 }
 
 model HomeSection {
@@ -197,9 +201,9 @@ model HomeSection {
   config    Json?
   sortOrder Int             @default(0)
   isActive  Boolean         @default(true)
+  singletonKey String?      @unique
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
-
   items HomeSectionItem[]
 
   @@index([isActive, sortOrder])
@@ -227,6 +231,20 @@ model HomeSectionItem {
   @@index([sectionId, isActive, sortOrder])
 }
 
+model ShopInfo {
+  id           String   @id @default("main")
+  address      String?  @db.Text
+  latitude     Float?
+  longitude    Float?
+  phones       String[] @default([])
+  email        String?
+  workingHours String?  @db.Text
+  instagram    String?
+  telegram     String?
+  whatsapp     String?
+  updatedAt    DateTime @updatedAt
+}
+
 // ───────── تماس با ما و درباره‌ی ما ─────────
 
 model ContactMessage {
@@ -244,15 +262,10 @@ model ContactMessage {
 }
 
 model AboutPage {
-  id           String   @id @default("main")
-  title        String
-  content      String   @db.Text
-  imageUrl     String?
-  foundedYear  Int?
-  address      String?
-  phone        String?
-  email        String?
-  workingHours String?
-  mapUrl       String?
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default("main")
+  title       String
+  content     String   @db.Text
+  imageKey    String?
+  foundedYear Int?
+  updatedAt   DateTime @updatedAt
 }

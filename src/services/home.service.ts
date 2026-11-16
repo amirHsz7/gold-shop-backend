@@ -1,15 +1,21 @@
 import { prisma } from "../lib/prisma.js";
 import { storage } from "../lib/storage.js";
 import type { Prisma } from "../generated/prisma/client.js";
+import { MAX_HOME_TESTIMONIALS } from "../lib/home-singletons.js";
 import {
+  DEFAULT_BANNER_COLUMNS,
+  DEFAULT_SLIDER_AUTOPLAY_MS,
+  bannersSectionConfigSchema,
   listSectionConfigSchema,
   productsSectionConfigSchema,
+  sliderSectionConfigSchema,
 } from "../schemas/home.schema.js";
 import {
   listCategories,
   listCollections,
   listProducts,
 } from "./product.service.js";
+import { getShopInfo } from "./shop-info.service.js";
 
 // فقط آیتم‌های فعال و داخل بازه‌ی زمانی نمایش
 const activeItemsWhere = (date: Date): Prisma.HomeSectionItemWhereInput => ({
@@ -19,6 +25,10 @@ const activeItemsWhere = (date: Date): Prisma.HomeSectionItemWhereInput => ({
     { OR: [{ endsAt: null }, { endsAt: { gte: date } }] },
   ],
 });
+
+// برای حریم خصوصی فقط اسم کوچک نویسنده‌ی نظر نمایش داده می‌شود
+const firstName = (fullName: string) =>
+  fullName.trim().split(/\s+/)[0] ?? fullName;
 
 export const getHome = async () => {
   const date = new Date();
@@ -50,6 +60,14 @@ export const getHome = async () => {
   });
 
   type SectionRow = (typeof sections)[number];
+  type ImageItem = SectionRow["items"][number];
+
+  const toImageItems = (items: ImageItem[]) =>
+    items.map(({ imageKey, mobileImageKey, ...item }) => ({
+      ...item,
+      imageUrl: storage.getUrl(imageKey),
+      mobileImageUrl: mobileImageKey ? storage.getUrl(mobileImageKey) : null,
+    }));
 
   const resolveSection = async (section: SectionRow) => {
     const base = {
@@ -60,20 +78,34 @@ export const getHome = async () => {
     };
 
     switch (section.type) {
-      case "SLIDER":
-      case "BANNERS": {
+      case "SLIDER": {
         // بخش بدون آیتم فعال نمایش داده نمی‌شود
         if (section.items.length === 0) return null;
 
+        const config = sliderSectionConfigSchema.safeParse(
+          section.config ?? {},
+        );
+
         return {
           ...base,
-          items: section.items.map(({ imageKey, mobileImageKey, ...item }) => ({
-            ...item,
-            imageUrl: storage.getUrl(imageKey),
-            mobileImageUrl: mobileImageKey
-              ? storage.getUrl(mobileImageKey)
-              : null,
-          })),
+          autoplayMs: config.success
+            ? config.data.autoplayMs
+            : DEFAULT_SLIDER_AUTOPLAY_MS,
+          items: toImageItems(section.items),
+        };
+      }
+
+      case "BANNERS": {
+        if (section.items.length === 0) return null;
+
+        const config = bannersSectionConfigSchema.safeParse(
+          section.config ?? {},
+        );
+
+        return {
+          ...base,
+          columns: config.success ? config.data.columns : DEFAULT_BANNER_COLUMNS,
+          items: toImageItems(section.items),
         };
       }
 
@@ -95,9 +127,22 @@ export const getHome = async () => {
           sort: source === "discount" ? "discount" : "newest",
         });
 
-        if (result.items.length === 0) return null;
+        if (result.items.length === 0) return null
 
-        return { ...base, items: result.items };
+        // پارامترهای لینک «مشاهده همه» برای صفحه‌ی محصولات
+        const viewAll: Record<string, string> = {}
+
+        if (source === "featured") viewAll.featured = "true"
+
+        if (source === "discount") {
+          viewAll.hasDiscount = "true"
+          viewAll.sort = "discount"
+        }
+
+        if (category) viewAll.category = category
+        if (collection) viewAll.collection = collection
+
+        return { ...base, source, viewAll, items: result.items }
       }
 
       case "CATEGORIES": {
@@ -118,6 +163,53 @@ export const getHome = async () => {
         if (collections.length === 0) return null;
 
         return { ...base, items: collections.slice(0, config.data.limit) };
+      }
+
+      case "TESTIMONIALS": {
+        // فقط نظر اصلیِ تأییدشده‌ای که ادمین دستی انتخاب کرده
+        const comments = await prisma.comment.findMany({
+          where: {
+            showOnHome: true,
+            status: "APPROVED",
+            parentId: null,
+            product: { isActive: true, deletedAt: null },
+          },
+          orderBy: { createdAt: "desc" },
+          take: MAX_HOME_TESTIMONIALS,
+          select: {
+            id: true,
+            body: true,
+            rating: true,
+            createdAt: true,
+            user: { select: { fullName: true } },
+            product: { select: { id: true, name: true, slug: true } },
+          },
+        });
+
+        if (comments.length === 0) return null;
+
+        return {
+          ...base,
+          items: comments.map(({ user, ...comment }) => ({
+            ...comment,
+            author: { name: firstName(user.fullName) },
+          })),
+        };
+      }
+
+      case "MAP": {
+        const info = await getShopInfo();
+
+        // بدون مختصات، نقشه‌ای برای نمایش وجود ندارد
+        if (info.latitude === null || info.longitude === null) return null;
+
+        return {
+          ...base,
+          location: { latitude: info.latitude, longitude: info.longitude },
+          address: info.address,
+          phones: info.phones,
+          workingHours: info.workingHours,
+        };
       }
 
       default:

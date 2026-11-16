@@ -22,6 +22,7 @@ export const listCollectionsForAdmin = async () => {
       name: true,
       slug: true,
       sortOrder: true,
+      description: true,
       isActive: true,
       imageKey: true,
       _count: { select: { products: { where: { deletedAt: null } } } },
