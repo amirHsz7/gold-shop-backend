@@ -13,6 +13,8 @@ const publicProductSelect = {
   metaDescription: true,
   minWeight: true,
   maxWeight: true,
+  minPrice: true,
+  maxPrice: true,
   discountPercent: true,
   isFeatured: true,
   createdAt: true,
@@ -38,6 +40,8 @@ const publicProductSelect = {
       fee: true,
       feeAmount: true,
       stock: true,
+      price: true,
+      originalPrice: true,
     },
   },
   images: {
@@ -52,18 +56,22 @@ type ProductRow = Prisma.ProductGetPayload<{
 
 const emptyRating = { average: 0, count: 0 };
 
-// کلید عکس‌ها را به آدرس تبدیل می‌کند و موجودی کل را حساب می‌کند
+// کلید عکس‌ها را به آدرس تبدیل می‌کند، قیمت‌ها را عدد می‌کند و موجودی کل را حساب می‌کند
 const toPublicProduct = (
-  { images, ...product }: ProductRow,
+  { images, variants, minPrice, maxPrice, ...product }: ProductRow,
   rating = emptyRating,
 ) => {
-  const totalStock = product.variants.reduce(
-    (sum, variant) => sum + variant.stock,
-    0,
-  );
+  const totalStock = variants.reduce((sum, variant) => sum + variant.stock, 0);
 
   return {
     ...product,
+    minPrice: minPrice?.toNumber() ?? null,
+    maxPrice: maxPrice?.toNumber() ?? null,
+    variants: variants.map(({ price, originalPrice, ...variant }) => ({
+      ...variant,
+      price: price?.toNumber() ?? null,
+      originalPrice: originalPrice?.toNumber() ?? null,
+    })),
     totalStock,
     inStock: totalStock > 0,
     rating,
@@ -75,9 +83,17 @@ const toPublicProduct = (
   };
 };
 
-// مرتب‌سازی وزن بر اساس کمترین و بیشترین وزن variantها
+// محصولاتی که قیمت ندارند آخر لیست می‌روند
 const orderByMap = {
   newest: [{ createdAt: "desc" }],
+  price_asc: [
+    { minPrice: { sort: "asc", nulls: "last" } },
+    { createdAt: "desc" },
+  ],
+  price_desc: [
+    { minPrice: { sort: "desc", nulls: "last" } },
+    { createdAt: "desc" },
+  ],
   weight_asc: [{ minWeight: "asc" }, { createdAt: "desc" }],
   weight_desc: [{ maxWeight: "desc" }, { createdAt: "desc" }],
   discount: [{ discountPercent: "desc" }, { createdAt: "desc" }],
@@ -95,14 +111,31 @@ export const listProducts = async (query: ListProductsQuery) => {
     search,
     featured,
     hasDiscount,
+    inStock,
+    minPrice,
+    maxPrice,
+    minWeight,
+    maxWeight,
     sort,
   } = query;
+
+  // شرط‌های وزن و موجودی باید روی یک وزن واحد با هم اعمال شوند
+  const variantFilter: Prisma.ProductVariantWhereInput = {
+    isActive: true,
+    ...(inStock && { stock: { gt: 0 } }),
+    ...((minWeight !== undefined || maxWeight !== undefined) && {
+      weight: {
+        ...(minWeight !== undefined && { gte: minWeight }),
+        ...(maxWeight !== undefined && { lte: maxWeight }),
+      },
+    }),
+  };
 
   const where: Prisma.ProductWhereInput = {
     isActive: true,
     deletedAt: null,
-    // محصول بدون variant فعال نمایش داده نمی‌شود
-    variants: { some: { isActive: true } },
+    // محصول بدون وزن فعال (و مطابق فیلتر وزن/موجودی) نمایش داده نمی‌شود
+    variants: { some: variantFilter },
     // اگر دسته‌ی والد انتخاب شود، محصولات زیردسته‌هایش هم می‌آیند
     category: {
       isActive: true,
@@ -113,6 +146,9 @@ export const listProducts = async (query: ListProductsQuery) => {
     ...(collection && { collection: { isActive: true, slug: collection } }),
     ...(featured !== undefined && { isFeatured: featured }),
     ...(hasDiscount && { discountPercent: { gt: 0 } }),
+    // بازه‌ی قیمت محصول با بازه‌ی خواسته‌شده هم‌پوشانی داشته باشد
+    ...(minPrice !== undefined && { maxPrice: { gte: minPrice } }),
+    ...(maxPrice !== undefined && { minPrice: { lte: maxPrice } }),
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
