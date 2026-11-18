@@ -14,6 +14,12 @@ const percent = (label: string) =>
 export const pricingSettingsSchema = z.object({
   sellerProfitPercent: percent("درصد سود فروشنده"),
   vatPercent: percent("درصد مالیات بر ارزش افزوده"),
+  goldPricePerGram: z
+    .number({ error: "قیمت طلا باید عدد باشد" })
+    .int("قیمت طلا باید عدد صحیح باشد")
+    .min(1, "قیمت طلا باید بیشتر از صفر باشد")
+    .max(1_000_000_000, "قیمت طلا بیش از حد بزرگ است")
+    .optional(),
 });
 
 export type PricingSettingsInput = z.infer<typeof pricingSettingsSchema>;

@@ -9,6 +9,8 @@ const publicProductSelect = {
   name: true,
   slug: true,
   description: true,
+  metaTitle: true,
+  metaDescription: true,
   minWeight: true,
   maxWeight: true,
   discountPercent: true,

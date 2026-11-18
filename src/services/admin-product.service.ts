@@ -10,6 +10,7 @@ import type {
   ListAdminProductsQuery,
   UpdateProductInput,
 } from "../schemas/admin-product.schema.js";
+import { recalculateProductPrices } from "./price.service.js";
 
 const MAX_IMAGES_PER_PRODUCT = 10;
 
@@ -36,6 +37,8 @@ const adminProductSelect = {
   name: true,
   slug: true,
   description: true,
+  metaTitle: true,
+  metaDescription: true,
   categoryId: true,
   collectionId: true,
   discountPercent: true,
@@ -291,6 +294,7 @@ export const createProduct = async (
       select: { id: true, slug: true },
     });
 
+    await recalculateProductPrices(product.id);
     return { ok: true, product };
   } catch (error) {
     // اگر بین چک و ساخت، درخواست دیگری همان slug یا sku را گرفته باشد
@@ -416,6 +420,8 @@ export const updateProduct = async (
       }
     });
 
+    await recalculateProductPrices(id); 
+    
     return { ok: true, product: { id, slug: productData.slug } };
   } catch (error) {
     // مثلاً جابه‌جا کردن هم‌زمان وزن یا sku بین دو وزن

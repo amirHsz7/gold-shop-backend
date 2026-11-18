@@ -112,9 +112,14 @@ model Product {
   metaTitle       String? @db.VarChar(70)
   metaDescription String? @db.VarChar(200)
 
+  // کش قیمت؛ فقط سرویس قیمت این‌ها را می‌نویسد
+  minPrice Decimal? @db.Decimal(15, 0)
+  maxPrice Decimal? @db.Decimal(15, 0)
+
   @@index([categoryId, isActive])
   @@index([collectionId, isActive])
   @@index([isFeatured, isActive])
+  @@index([isActive, minPrice])
 }
 
 // هر ردیف = یک وزن مشخص با تعداد موجودی همان وزن
@@ -128,6 +133,8 @@ model ProductVariant {
   weight    Decimal  @db.Decimal(10, 3) // گرم
   fee       Decimal  @default(0) @db.Decimal(6, 3) // درصد اجرت از وزن
   feeAmount Decimal  @default(0) @db.Decimal(15, 0) // اجرت ریالی
+  price         Decimal? @db.Decimal(15, 0) // قیمت نهایی بعد از تخفیف (تومان)
+  originalPrice Decimal? @db.Decimal(15, 0) // قیمت قبل از تخفیف
   stock     Int      @default(1)
   isActive  Boolean  @default(true)
   sortOrder Int      @default(0)
@@ -274,10 +281,24 @@ model AboutPage {
 }
 
 // ───────── تنظیمات قیمت‌گذاری ─────────
+enum DiscountBase {
+  TOTAL
+  FEE
+}
 
 model PricingSetting {
-  id                  String   @id @default("main")
-  sellerProfitPercent Decimal  @default(7) @db.Decimal(5, 2)
-  vatPercent          Decimal  @default(10) @db.Decimal(5, 2)
-  updatedAt           DateTime @updatedAt
+  id                  String       @id @default("main")
+  sellerProfitPercent Decimal      @default(7) @db.Decimal(5, 2)
+  vatPercent          Decimal      @default(10) @db.Decimal(5, 2)
+
+  // قیمت هر گرم طلای ۱۸ عیار به تومان؛ فعلاً دستی، بعداً از TGN
+  goldPricePerGram    Int?
+  goldPriceSource     String       @default("manual")
+  goldPriceUpdatedAt  DateTime?
+
+  discountBase        DiscountBase @default(TOTAL)
+  feeAmountInRial     Boolean      @default(false)
+  roundTo             Int          @default(1000)
+
+  updatedAt           DateTime     @updatedAt
 }
