@@ -31,6 +31,15 @@ const descriptionSchema = z
   .trim()
   .max(5000, "توضیحات نمی‌تواند بیشتر از ۵۰۰۰ کاراکتر باشد");
 
+const metaTitleSchema = z
+  .string()
+  .trim()
+  .max(70, "عنوان سئو نمی‌تواند بیشتر از ۷۰ کاراکتر باشد");
+
+const metaDescriptionSchema = z
+  .string()
+  .trim()
+  .max(200, "توضیح سئو نمی‌تواند بیشتر از ۲۰۰ کاراکتر باشد");
 export const idSchema = z.string().trim().min(1, "شناسه نامعتبر است");
 
 const discountSchema = z
@@ -126,6 +135,9 @@ const productFields = {
   name: nameSchema,
   slug: slugSchema,
   description: descriptionSchema.nullable().optional(),
+
+  metaTitle: metaTitleSchema.nullable().optional(),
+  metaDescription: metaDescriptionSchema.nullable().optional(),
 
   categoryId: idSchema,
   collectionId: idSchema.nullable().optional(), // null یعنی بدون کالکشن

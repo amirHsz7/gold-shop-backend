@@ -228,7 +228,7 @@ type CreateProductResult =
 export const createProduct = async (
   input: CreateProductInput,
 ): Promise<CreateProductResult> => {
-  const { variants, collectionId, description, ...productData } = input;
+  const { variants, collectionId, description, metaTitle, metaDescription, ...productData } = input;
 
   const category = await prisma.category.findFirst({
     where: { id: productData.categoryId, isActive: true },
@@ -271,6 +271,8 @@ export const createProduct = async (
       data: {
         ...productData,
         description: description ?? null,
+        metaTitle: metaTitle || null,
+        metaDescription: metaDescription || null,
         collectionId: collectionId ?? null,
         ...getWeightRange(variants),
         variants: {
@@ -316,7 +318,7 @@ export const updateProduct = async (
   id: string,
   input: UpdateProductInput,
 ): Promise<UpdateProductResult> => {
-  const { variants, collectionId, description, ...productData } = input;
+  const { variants, collectionId, description, metaTitle, metaDescription, ...productData } = input;
 
   const existing = await prisma.product.findFirst({
     where: { id, deletedAt: null },
@@ -382,6 +384,8 @@ export const updateProduct = async (
         data: {
           ...productData,
           description: description ?? null,
+          metaTitle: metaTitle || null,
+          metaDescription: metaDescription || null,
           collectionId: collectionId ?? null,
           ...getWeightRange(variants),
         },

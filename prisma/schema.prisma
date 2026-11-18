@@ -108,6 +108,9 @@ model Product {
   variants ProductVariant[]
   images   ProductImage[]
   comments Comment[]
+  
+  metaTitle       String? @db.VarChar(70)
+  metaDescription String? @db.VarChar(200)
 
   @@index([categoryId, isActive])
   @@index([collectionId, isActive])
@@ -268,4 +271,13 @@ model AboutPage {
   imageKey    String?
   foundedYear Int?
   updatedAt   DateTime @updatedAt
+}
+
+// ───────── تنظیمات قیمت‌گذاری ─────────
+
+model PricingSetting {
+  id                  String   @id @default("main")
+  sellerProfitPercent Decimal  @default(7) @db.Decimal(5, 2)
+  vatPercent          Decimal  @default(10) @db.Decimal(5, 2)
+  updatedAt           DateTime @updatedAt
 }

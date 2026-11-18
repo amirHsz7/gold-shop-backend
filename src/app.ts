@@ -18,6 +18,8 @@ import collectionRoutes from "./routes/collection.routes.js";
 import homeRoutes from "./routes/home.routes.js";
 import { authMiddleware } from "./middlewares/auth.middleware.js";
 import { adminMiddleware } from "./middlewares/admin.middleware.js";
+import pricingSettingsRoutes from "./routes/pricing-settings.routes.js";
+
 
 // admin
 import adminProductRoutes from "./routes/admin-product.routes.js";
@@ -26,6 +28,7 @@ import adminCollectionRoutes from "./routes/admin-collection.routes.js";
 import adminShopInfoRoutes from "./routes/admin-shop-info.routes.js";
 import adminCommentRoutes from "./routes/admin-comment.routes.js";
 import adminHomeRoutes from "./routes/admin-home.routes.js";
+import adminPricingSettingsRoutes from "./routes/admin-pricing-settings.routes.js";
 
 const app = express();
 
@@ -52,6 +55,7 @@ app.use("/home", homeRoutes);
 
 app.use("/shop-info", shopInfoRoutes);
 
+app.use("/pricing-settings", pricingSettingsRoutes);
 
 // panel admin APIs
 
@@ -95,6 +99,13 @@ app.use("/admin/home",
   authMiddleware, 
   adminMiddleware, 
   adminHomeRoutes
+);
+
+app.use(
+  "/admin/pricing-settings",
+  authMiddleware,
+  adminMiddleware,
+  adminPricingSettingsRoutes,
 );
 
 app.post("/_test-upload", uploadSingleImage("image"), async (req, res, next) => {
