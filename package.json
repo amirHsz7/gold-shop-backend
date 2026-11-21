@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "postinstall": "prisma skills sync || exit 0",
     "demo:clear": "tsx prisma/clear-demo.ts",
-    "prices:recalculate": "tsx prisma/recalculate-prices.ts"
+    "prices:recalculate": "tsx prisma/recalculate-prices.ts",
+    "admin:make-super": "tsx prisma/make-super-admin.ts"
   },
   "keywords": [],
   "author": "",

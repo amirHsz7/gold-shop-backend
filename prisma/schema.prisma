@@ -10,6 +10,7 @@ datasource db {
 enum UserRole {
   CUSTOMER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum OtpPurpose {
@@ -22,9 +23,18 @@ model User {
   mobile    String    @unique
   fullName  String
   role      UserRole  @default(CUSTOMER)
+  // ادمین‌ها: دریافت پیامک سفارش جدید
+  receivesOrderSms Boolean @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   comments  Comment[]
+
+  addresses Address[]
+  cart      Cart?
+  orders    Order[]
+  cancelledOrders Order[] @relation("OrderCancelledBy")
+  auditLogs       AuditLog[] @relation("AuditActor")
+  auditTargets    AuditLog[] @relation("AuditTarget")
 }
 
 model Otp {
@@ -140,6 +150,9 @@ model ProductVariant {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
   @@unique([productId, weight])
   @@index([productId, isActive, sortOrder])
@@ -300,5 +313,231 @@ model PricingSetting {
   feeAmountInRial     Boolean      @default(false)
   roundTo             Int          @default(1000)
 
+  // نسخه‌ی قیمت منتشرشده؛ با هر تغییر قیمت طلا یکی زیاد می‌شود
+  priceVersion        Int          @default(1)
+
+  // ارسال
+  shippingCost          Int      @default(0)            // تومان
+  freeShippingMinWeight Decimal? @db.Decimal(10, 3)     // گرم؛ خالی = ارسال رایگان خاموش
+
   updatedAt           DateTime     @updatedAt
+}
+
+// ───────── تاریخچه‌ی قیمت طلا ─────────
+
+model GoldPriceHistory {
+  id           String   @id @default(cuid())
+  pricePerGram Int
+  source       String
+  version      Int
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ───────── آدرس‌ها ─────────
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title      String   @db.VarChar(50) // خانه، محل کار، ...
+  province   String
+  city       String
+  address    String   @db.Text
+  postalCode String   @db.VarChar(10)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ───────── سبد خرید ─────────
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String         @id @default(cuid())
+  cartId    String
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int            @default(1)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([cartId, variantId])
+}
+
+// ───────── سفارش و پرداخت ─────────
+
+enum OrderStatus {
+  PENDING_PAYMENT // ساخته شده، منتظر پرداخت (موجودی نگه داشته شده)
+  PREPARING       // پرداخت موفق، در حال آماده‌سازی
+  SHIPPED         // ارسال شده، کد رهگیری ثبت شده
+  CANCELLED       // لغو توسط ادمین
+  EXPIRED         // پرداخت انجام نشد و مهلت تمام شد
+  NEEDS_REVIEW    // پرداخت دیرهنگام و موجودی نبود؛ بررسی دستی و بازگشت وجه
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNumber Int         @unique @default(autoincrement()) // شماره‌ی نمایشی
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  status      OrderStatus @default(PENDING_PAYMENT)
+
+  // گیرنده و آدرس (کپی لحظه‌ی خرید)
+  recipientName   String
+  recipientMobile String
+  province        String
+  city            String
+  address         String  @db.Text
+  postalCode      String  @db.VarChar(10)
+
+  // مبالغ (تومان)
+  itemsTotal    Decimal @db.Decimal(15, 0)
+  discountTotal Decimal @default(0) @db.Decimal(15, 0)
+  shippingCost  Decimal @default(0) @db.Decimal(15, 0)
+  totalAmount   Decimal @db.Decimal(15, 0)
+  freeShipping  Boolean @default(false)
+  totalWeight   Decimal @db.Decimal(10, 3)
+
+  // قیمت طلا و نسخه‌ی قیمت لحظه‌ی خرید
+  goldPricePerGram Int
+  priceVersion     Int
+
+  // موجودی
+  stockReleasedAt DateTime?
+
+  // ارسال
+  trackingCode String?
+  shippedAt    DateTime?
+
+  // لغو
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelledBy   User?     @relation("OrderCancelledBy", fields: [cancelledById], references: [id])
+  cancelReason  String?   @db.Text
+  refundPending Boolean   @default(false)
+  refundedAt    DateTime?
+
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  items    OrderItem[]
+  payments Payment[]
+  smsLogs  SmsLog[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+// کپی (snapshot) از محصول در لحظه‌ی خرید؛ با تغییر یا حذف محصول عوض نمی‌شود
+model OrderItem {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  productName  String
+  productSlug  String?
+  imageKey     String?
+  karat        Int     @default(18)
+  weight       Decimal @db.Decimal(10, 3)
+  quantity     Int
+  unitPrice    Decimal @db.Decimal(15, 0) // بعد از تخفیف
+  originalUnitPrice Decimal @db.Decimal(15, 0)
+  discountPercent   Decimal @default(0) @db.Decimal(5, 2)
+
+  // ریز محاسبه (طلا، اجرت، سود، مالیات) برای فاکتور در صورت نیاز حسابدار
+  breakdown Json?
+
+  @@index([orderId])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
+}
+
+model Payment {
+  id        String        @id @default(cuid())
+  orderId   String
+  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  gateway   String        // simulator، بعداً نام درگاه واقعی
+  amount    Decimal       @db.Decimal(15, 0)
+  status    PaymentStatus @default(PENDING)
+  authority String?       // شناسه‌ی تراکنش درگاه
+  refId     String?       // کد پیگیری بانک
+  cardPan   String?       // فقط ۴ رقم آخر یا ماسک‌شده
+  failureReason String?
+  expiresAt DateTime      // پایان نگه‌داشتن موجودی
+  paidAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([gateway, authority])
+  @@index([orderId])
+  @@index([status, expiresAt])
+}
+
+// ───────── پیامک ─────────
+
+enum SmsType {
+  ORDER_NEW_ADMIN
+  ORDER_SHIPPED_CUSTOMER
+}
+
+enum SmsStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model SmsLog {
+  id        String    @id @default(cuid())
+  type      SmsType
+  recipient String
+  text      String    @db.Text
+  status    SmsStatus @default(PENDING)
+  attempts  Int       @default(0)
+  error     String?
+  orderId   String?
+  order     Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // جلوگیری از ارسال تکراری برای یک سفارش
+  @@unique([type, orderId, recipient])
+  @@index([status, createdAt])
+}
+
+// ───────── لاگ تغییرات حساس ─────────
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  action       String   // مثلاً ROLE_CHANGED
+  actorId      String
+  actor        User     @relation("AuditActor", fields: [actorId], references: [id])
+  targetUserId String?
+  target       User?    @relation("AuditTarget", fields: [targetUserId], references: [id])
+  details      Json?    // مثلاً { from: "CUSTOMER", to: "ADMIN" }
+  createdAt    DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetUserId, createdAt])
 }

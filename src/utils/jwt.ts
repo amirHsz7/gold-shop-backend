@@ -45,7 +45,9 @@ export async function verifyAccessToken(token: string) {
 
     if (
       typeof payload.sub !== "string" ||
-      (payload.role !== "CUSTOMER" && payload.role !== "ADMIN")
+      (payload.role !== "CUSTOMER" &&
+        payload.role !== "ADMIN" &&
+        payload.role !== "SUPER_ADMIN")
     ) {
       return null;
     }
