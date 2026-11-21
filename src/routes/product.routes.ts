@@ -8,7 +8,7 @@ import {
   createCommentSchema,
   listCommentsQuerySchema,
 } from "../schemas/comment.schema.js";
-import { getProduct, getProducts } from "../controllers/product.controller.js";
+import { getProduct, getProductFilters, getProducts } from "../controllers/product.controller.js";
 import {
   createProductComment,
   getProductComments,
@@ -28,6 +28,7 @@ const commentLimiter = rateLimit({
 });
 
 router.get("/", validateQuery(listProductsQuerySchema), getProducts);
+router.get("/filters", getProductFilters);
 router.get("/:slug", getProduct);
 
 router.get(

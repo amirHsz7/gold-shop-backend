@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import {
   getProductBySlug,
+  getProductFilterOptions,
   listCategories,
   listCollections,
   listProducts,
@@ -46,6 +47,16 @@ export const getCollections: RequestHandler = async (_req, res, next) => {
     const collections = await listCollections();
 
     res.status(200).json({ status: "success", data: collections });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getProductFilters: RequestHandler = async (_req, res, next) => {
+  try {
+    const data = await getProductFilterOptions();
+
+    res.status(200).json({ status: "success", data });
   } catch (error) {
     next(error);
   }

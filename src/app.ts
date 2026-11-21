@@ -32,6 +32,10 @@ import adminPricingSettingsRoutes from "./routes/admin-pricing-settings.routes.j
 
 const app = express();
 
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", Number(process.env.TRUST_PROXY));
+}
+
 app.use(express.json());
 
 app.use(

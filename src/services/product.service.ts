@@ -265,3 +265,44 @@ export const listCollections = async () => {
     productCount: _count.products,
   }));
 };
+
+// کمترین و بیشترین وزن و قیمت؛ برای ریل اسلایدرهای فیلتر
+export const getProductFilterOptions = async () => {
+  const [weightRange, priceRange] = await Promise.all([
+    prisma.productVariant.aggregate({
+      where: {
+        isActive: true,
+        product: { isActive: true, deletedAt: null, category: { isActive: true } },
+      },
+      _min: { weight: true },
+      _max: { weight: true },
+    }),
+    // قیمت محصولات از ستون‌های کش‌شده؛ اگر قیمت طلا ثبت نشده باشد null است
+    prisma.product.aggregate({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        category: { isActive: true },
+        variants: { some: { isActive: true } },
+      },
+      _min: { minPrice: true },
+      _max: { maxPrice: true },
+    }),
+  ]);
+
+  const minWeight = weightRange._min.weight?.toNumber();
+  const maxWeight = weightRange._max.weight?.toNumber();
+  const minPrice = priceRange._min.minPrice?.toNumber();
+  const maxPrice = priceRange._max.maxPrice?.toNumber();
+
+  return {
+    weight:
+      minWeight === undefined || maxWeight === undefined
+        ? null
+        : { min: minWeight, max: maxWeight },
+    price:
+      minPrice === undefined || maxPrice === undefined
+        ? null
+        : { min: minPrice, max: maxPrice },
+  };
+};

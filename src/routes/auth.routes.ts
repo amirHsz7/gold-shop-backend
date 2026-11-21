@@ -1,6 +1,10 @@
-
 import { Router } from "express";
 import { validate } from "../middlewares/validate.middleware.js";
+import {
+  otpRequestIpLimiter,
+  otpRequestMobileLimiter,
+  otpVerifyIpLimiter,
+} from "../middlewares/auth-rate-limit.middleware.js";
 import {
   registerSchema,
   loginSchema,
@@ -17,20 +21,25 @@ const router = Router();
 // Register
 router.post(
   "/register",
+  otpRequestIpLimiter,
   validate(registerSchema),
+  otpRequestMobileLimiter,
   register,
 );
 
 // Login
 router.post(
   "/login",
+  otpRequestIpLimiter,
   validate(loginSchema),
+  otpRequestMobileLimiter,
   login,
 );
 
-// Verify OTP - Controller will be added later
+// Verify OTP
 router.post(
   "/verify-otp",
+  otpVerifyIpLimiter,
   validate(verifyOtpSchema),
   verifyOtpController,
 );

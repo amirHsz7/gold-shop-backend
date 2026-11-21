@@ -1,10 +1,13 @@
-
 import { prisma } from "../lib/prisma.js";
 import { generateOtp, hashOtp } from "../utils/otp.js";
 import type { OtpPurpose } from "../generated/prisma/client.js";
 import { timingSafeEqual } from "node:crypto";
 import type { VerifyOtpInput } from "../schemas/auth.schema.js";
 import { AppError } from "../utils/app-error.js";
+
+const OTP_TTL_MS = 2 * 60 * 1000;
+// حداقل فاصله بین دو درخواست کد برای یک شماره
+const RESEND_COOLDOWN_MS = 60 * 1000;
 
 interface RequestOtpParams {
   mobile: string;
@@ -35,6 +38,24 @@ export async function requestOtp({
     );
   }
 
+  // جلوگیری از درخواست پشت‌سرهم کد (هزینه‌ی پیامک و ریست شدن attempts).
+  // زمان ارسال کد قبلی = expiresAt منهای مدت اعتبار کد.
+  const existingOtp = await prisma.otp.findUnique({
+    where: { mobile },
+  });
+
+  if (existingOtp) {
+    const sentAt = existingOtp.expiresAt.getTime() - OTP_TTL_MS;
+    const waitMs = sentAt + RESEND_COOLDOWN_MS - Date.now();
+
+    if (waitMs > 0) {
+      throw new AppError(
+        `برای دریافت کد جدید ${Math.ceil(waitMs / 1000)} ثانیه صبر کنید.`,
+        429,
+      );
+    }
+  }
+
   const code = generateOtp();
 
   if (process.env.NODE_ENV === "development") {
@@ -42,7 +63,7 @@ export async function requestOtp({
   }
 
   const codeHash = hashOtp(code);
-  const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
   await prisma.otp.upsert({
     where: { mobile },
@@ -136,7 +157,7 @@ export async function verifyOtp(input: VerifyOtpInput) {
 
     if (purpose === "REGISTER") {
       if (!currentOtp.fullName) {
-      throw new AppError("اطلاعات ثبت‌نام کامل نیست.", 400);
+        throw new AppError("اطلاعات ثبت‌نام کامل نیست.", 400);
       }
 
       user = await tx.user.create({
