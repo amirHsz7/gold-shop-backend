@@ -1,5 +1,6 @@
 import { prisma } from "../lib/prisma.js";
 import type { Prisma } from "../generated/prisma/client.js";
+import { isAdminRole } from "../utils/roles.js"
 import type {
   CreateCommentInput,
   ListCommentsQuery,
@@ -20,7 +21,7 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
 // موبایل کاربر هیچ‌وقت بیرون نمی‌رود؛ فقط نام و اینکه ادمین است یا نه
 const toPublicComment = ({ user, ...comment }: CommentRow) => ({
   ...comment,
-  author: { name: user.fullName, isAdmin: user.role === "ADMIN" },
+  author: { name: user.fullName, isAdmin: isAdminRole(user.role) }
 });
 
 // میانگین، تعداد و توزیع امتیازها (فقط نظرهای تأییدشده)
@@ -201,7 +202,7 @@ export const createComment = async (
       userId,
       parentId: parentId ?? null,
       // نظر ادمین مستقیم تأیید می‌شود
-      status: user?.role === "ADMIN" ? "APPROVED" : "PENDING",
+      status: isAdminRole(user?.role) ? "APPROVED" : "PENDING"
     },
     select: { id: true, status: true },
   });
