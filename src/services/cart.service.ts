@@ -3,6 +3,7 @@ import { storage } from "../lib/storage.js";
 import { calcVariantPrice } from "../lib/pricing.js";
 import { getPricingConfig } from "./price.service.js";
 import { AppError } from "../utils/app-error.js";
+import { Prisma } from "../generated/prisma/client.js";
 
 const MAX_LINES = 30;
 const MAX_QUANTITY = 99;
@@ -10,6 +11,18 @@ const MAX_QUANTITY = 99;
 type CartIssue = "UNAVAILABLE" | "OUT_OF_STOCK" | "QUANTITY_EXCEEDS_STOCK";
 
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
+const lockCart = async (
+  tx: Prisma.TransactionClient,
+  cartId: string,
+) => {
+  await tx.$queryRaw`
+    SELECT "id"
+    FROM "Cart"
+    WHERE "id" = ${cartId}
+    FOR UPDATE
+  `;
+};
 
 export const getCart = async (userId: string) => {
   const [rows, config, setting] = await Promise.all([
@@ -65,14 +78,21 @@ export const getCart = async (userId: string) => {
       variant.isActive && product.isActive && product.deletedAt === null;
 
     let issue: CartIssue | null = null;
+    const availableStock = Math.max(
+      0,
+      variant.stock - variant.reservedStock,
+    );
+
     if (!listed) issue = "UNAVAILABLE";
-    else if (variant.stock <= 0) issue = "OUT_OF_STOCK";
-    else if (row.quantity > variant.stock) issue = "QUANTITY_EXCEEDS_STOCK";
+    else if (availableStock <= 0) issue = "OUT_OF_STOCK";
+    else if (row.quantity > availableStock) {
+      issue = "QUANTITY_EXCEEDS_STOCK";
+    }
 
     const effectiveQuantity =
       issue === "UNAVAILABLE" || issue === "OUT_OF_STOCK"
         ? 0
-        : Math.min(row.quantity, variant.stock);
+        : Math.min(row.quantity, availableStock);
 
     const weight = variant.weight.toNumber();
 
@@ -106,7 +126,7 @@ export const getCart = async (userId: string) => {
       imageAlt: image?.alt ?? null,
       weight,
       karat: 18,
-      stock: variant.stock,
+      stock: availableStock,
       quantity: row.quantity,
       effectiveQuantity,
       unitPrice: prices?.price ?? null,
@@ -160,28 +180,6 @@ export const addCartItem = async (
   variantId: string,
   quantity: number,
 ) => {
-  const variant = await prisma.productVariant.findUnique({
-    where: { id: variantId },
-    select: {
-      stock: true,
-      isActive: true,
-      product: { select: { isActive: true, deletedAt: true } },
-    },
-  });
-
-  if (
-    !variant ||
-    !variant.isActive ||
-    !variant.product.isActive ||
-    variant.product.deletedAt !== null
-  ) {
-    throw new AppError("این محصول در دسترس نیست.", 404);
-  }
-
-  if (variant.stock <= 0) {
-    throw new AppError("این وزن در حال حاضر ناموجود است.", 409);
-  }
-
   const cart = await prisma.cart.upsert({
     where: { userId },
     update: {},
@@ -189,31 +187,76 @@ export const addCartItem = async (
     select: { id: true },
   });
 
-  const key = { cartId_variantId: { cartId: cart.id, variantId } };
+  await prisma.$transaction(async (tx) => {
+    await lockCart(tx, cart.id);
 
-  const existing = await prisma.cartItem.findUnique({
-    where: key,
-    select: { quantity: true },
-  });
+    const variant = await tx.productVariant.findUnique({
+      where: { id: variantId },
+      select: {
+        stock: true,
+        reservedStock: true,
+        isActive: true,
+        product: {
+          select: { isActive: true, deletedAt: true },
+        },
+      },
+    });
 
-  if (!existing) {
-    const lines = await prisma.cartItem.count({ where: { cartId: cart.id } });
-
-    if (lines >= MAX_LINES) {
-      throw new AppError("تعداد محصولات سبد خرید به حداکثر رسیده است.", 409);
+    if (
+      !variant ||
+      !variant.isActive ||
+      !variant.product.isActive ||
+      variant.product.deletedAt !== null
+    ) {
+      throw new AppError("این محصول در دسترس نیست.", 404);
     }
-  }
 
-  const next = Math.min(
-    (existing?.quantity ?? 0) + quantity,
-    variant.stock,
-    MAX_QUANTITY,
-  );
+    const availableStock = variant.stock - variant.reservedStock;
 
-  await prisma.cartItem.upsert({
-    where: key,
-    update: { quantity: next },
-    create: { cartId: cart.id, variantId, quantity: next },
+    if (availableStock <= 0) {
+      throw new AppError("این وزن در حال حاضر ناموجود است.", 409);
+    }
+
+    const key = {
+      cartId_variantId: {
+        cartId: cart.id,
+        variantId,
+      },
+    };
+
+    const existing = await tx.cartItem.findUnique({
+      where: key,
+      select: { quantity: true },
+    });
+
+    if (!existing) {
+      const lines = await tx.cartItem.count({
+        where: { cartId: cart.id },
+      });
+
+      if (lines >= MAX_LINES) {
+        throw new AppError(
+          "تعداد محصولات سبد خرید به حداکثر رسیده است.",
+          409,
+        );
+      }
+    }
+
+    const next = Math.min(
+      (existing?.quantity ?? 0) + quantity,
+      availableStock,
+      MAX_QUANTITY,
+    );
+
+    await tx.cartItem.upsert({
+      where: key,
+      update: { quantity: next },
+      create: {
+        cartId: cart.id,
+        variantId,
+        quantity: next,
+      },
+    });
   });
 
   return getCart(userId);
@@ -224,56 +267,110 @@ export const updateCartItem = async (
   variantId: string,
   quantity: number,
 ) => {
-  const item = await prisma.cartItem.findFirst({
-    where: { variantId, cart: { userId } },
-    select: {
-      id: true,
-      variant: {
-        select: {
-          stock: true,
-          isActive: true,
-          product: { select: { isActive: true, deletedAt: true } },
+  await prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!cart) {
+      throw new AppError("سبد خرید شما پیدا نشد.", 404);
+    }
+
+    await lockCart(tx, cart.id);
+
+    const item = await tx.cartItem.findUnique({
+      where: {
+        cartId_variantId: {
+          cartId: cart.id,
+          variantId,
         },
       },
-    },
-  });
+      include: {
+        variant: {
+          include: {
+            product: {
+              select: {
+                isActive: true,
+                deletedAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
 
-  if (!item) {
-    throw new AppError("این محصول در سبد خرید شما نیست.", 404);
-  }
+    if (!item) {
+      throw new AppError("این محصول در سبد خرید شما نیست.", 404);
+    }
 
-  const { variant } = item;
+    const { variant } = item;
 
-  if (
-    !variant.isActive ||
-    !variant.product.isActive ||
-    variant.product.deletedAt !== null
-  ) {
-    throw new AppError("این محصول دیگر در دسترس نیست.", 409);
-  }
+    if (
+      !variant.isActive ||
+      !variant.product.isActive ||
+      variant.product.deletedAt !== null
+    ) {
+      throw new AppError("این محصول دیگر در دسترس نیست.", 409);
+    }
 
-  if (variant.stock <= 0) {
-    throw new AppError("این وزن در حال حاضر ناموجود است.", 409);
-  }
+    const availableStock = variant.stock - variant.reservedStock;
 
-  await prisma.cartItem.update({
-    where: { id: item.id },
-    data: { quantity: Math.min(quantity, variant.stock, MAX_QUANTITY) },
+    if (availableStock <= 0) {
+      throw new AppError("این وزن در حال حاضر ناموجود است.", 409);
+    }
+
+    await tx.cartItem.update({
+      where: { id: item.id },
+      data: {
+        quantity: Math.min(quantity, availableStock, MAX_QUANTITY),
+      },
+    });
   });
 
   return getCart(userId);
 };
 
-export const removeCartItem = async (userId: string, variantId: string) => {
-  await prisma.cartItem.deleteMany({
-    where: { variantId, cart: { userId } },
+export const removeCartItem = async (
+  userId: string,
+  variantId: string,
+) => {
+  await prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!cart) return;
+
+    await lockCart(tx, cart.id);
+
+    await tx.cartItem.deleteMany({
+      where: {
+        cartId: cart.id,
+        variantId,
+      },
+    });
   });
 
   return getCart(userId);
 };
 
 export const clearCart = async (userId: string) => {
-  await prisma.cartItem.deleteMany({ where: { cart: { userId } } });
+  await prisma.$transaction(async (tx) => {
+    const cart = await tx.cart.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!cart) return;
+
+    await lockCart(tx, cart.id);
+
+    await tx.cartItem.deleteMany({
+      where: { cartId: cart.id },
+    });
+  });
 
   return getCart(userId);
 };

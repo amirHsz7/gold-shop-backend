@@ -166,6 +166,14 @@ export const createOrder = async ({
             throw new AppError("آدرس انتخاب‌شده پیدا نشد.", 404);
           }
 
+          // جلوگیری از تغییر تنظیمات قیمت در حین محاسبه Snapshot سفارش
+            await tx.$queryRaw`
+            SELECT "id"
+            FROM "PricingSetting"
+            WHERE "id" = 'main'
+            FOR SHARE
+            `;
+            
           // تنظیمات قیمت در همان Transaction خوانده می‌شوند
           const setting = await tx.pricingSetting.findUnique({
             where: { id: "main" },
@@ -195,6 +203,14 @@ export const createOrder = async ({
           if (!cart) {
             throw new AppError("سبد خرید شما خالی است.", 409);
           }
+
+            // قفل سبد خرید برای جلوگیری از تغییر هم‌زمان هنگام Checkout
+            await tx.$queryRaw`
+            SELECT "id"
+            FROM "Cart"
+            WHERE "id" = ${cart.id}
+            FOR UPDATE
+            `;
 
           // ابتدا شناسه وزن‌ها را می‌گیریم
           const cartLines = await tx.cartItem.findMany({
