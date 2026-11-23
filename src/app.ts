@@ -21,6 +21,7 @@ import { adminMiddleware } from "./middlewares/admin.middleware.js";
 import pricingSettingsRoutes from "./routes/pricing-settings.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
 import addressRoutes from "./routes/address.routes.js"
+import orderRoutes from "./routes/order.routes.js";
 
 // admin
 import adminProductRoutes from "./routes/admin-product.routes.js";
@@ -65,6 +66,8 @@ app.use("/pricing-settings", pricingSettingsRoutes);
 app.use("/cart", authMiddleware, cartRoutes);
 
 app.use("/addresses", authMiddleware, addressRoutes);
+
+app.use("/orders", authMiddleware, orderRoutes);
 
 // panel admin APIs
 
