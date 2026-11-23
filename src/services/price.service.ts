@@ -30,7 +30,7 @@ export const recalculateProductPrices = async (
       discountPercent: true,
       variants: {
         where: { isActive: true },
-        select: { id: true, weight: true, fee: true, feeAmount: true, stock: true },
+        select: { id: true, weight: true, fee: true, feeAmount: true, stock: true ,reservedStock: true,},
       },
     },
   });
@@ -41,7 +41,7 @@ export const recalculateProductPrices = async (
 
   const priced = product.variants.map((variant) => ({
     id: variant.id,
-    stock: variant.stock,
+    availableStock: variant.stock - variant.reservedStock,
     ...(config
       ? calcVariantPrice(
           {
@@ -55,9 +55,9 @@ export const recalculateProductPrices = async (
       : { price: null, originalPrice: null }),
   }));
 
-  // کمینه و بیشینه فقط روی وزن‌های موجود؛ اگر هیچ‌کدام موجود نبود روی همه
-  const inStock = priced.filter((variant) => variant.stock > 0);
-  const candidates = (inStock.length > 0 ? inStock : priced)
+  // فقط Variantهایی که موجودی قابل فروش دارند در بازه قیمت شرکت می‌کنند
+  const candidates = priced
+    .filter((variant) => variant.availableStock > 0)
     .map((variant) => variant.price)
     .filter((price): price is number => price !== null);
 
