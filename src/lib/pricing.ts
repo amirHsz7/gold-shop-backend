@@ -1,3 +1,4 @@
+
 export type PricingConfig = {
   goldPricePerGram: number;
   sellerProfitPercent: number;
@@ -9,11 +10,18 @@ export type PricingConfig = {
 
 export type PriceableVariant = {
   weight: number;
-  fee: number; // درصد اجرت از وزن
-  feeAmount: number; // اجرت ثابت
+  fee: number;
+  feeAmount: number;
 };
 
-// همه‌ی مبالغ تومان
+type PriceBreakdown = {
+  goldAmount: number;
+  feeAmount: number;
+  sellerProfitAmount: number;
+  vatAmount: number;
+  total: number;
+};
+
 export const calcVariantPrice = (
   variant: PriceableVariant,
   config: PricingConfig,
@@ -26,22 +34,83 @@ export const calcVariantPrice = (
   const round = (value: number) =>
     Math.round(value / config.roundTo) * config.roundTo;
 
-  const raw = variant.weight * config.goldPricePerGram;
+  const goldAmount =
+    variant.weight * config.goldPricePerGram;
 
-  // feeFactor: کسری از اجرت که اعمال می‌شود (برای تخفیف روی اجرت)
-  const build = (feeFactor: number) => {
-    const fee = ((raw * variant.fee) / 100 + feeAmount) * feeFactor;
-    const profit = ((raw + fee) * config.sellerProfitPercent) / 100;
-    const vat = ((fee + profit) * config.vatPercent) / 100;
+  const build = (feeFactor: number): PriceBreakdown => {
+    const fee =
+      ((goldAmount * variant.fee) / 100 + feeAmount) *
+      feeFactor;
 
-    return raw + fee + profit + vat;
+    const profit =
+      ((goldAmount + fee) * config.sellerProfitPercent) / 100;
+
+    const vat =
+      ((fee + profit) * config.vatPercent) / 100;
+
+    return {
+      goldAmount,
+      feeAmount: fee,
+      sellerProfitAmount: profit,
+      vatAmount: vat,
+      total: goldAmount + fee + profit + vat,
+    };
   };
 
   const original = build(1);
-  const rate = Math.min(Math.max(discountPercent, 0), 100) / 100;
+
+  const normalizedDiscount = Math.min(
+    Math.max(discountPercent, 0),
+    100,
+  );
+
+  const discountRate = normalizedDiscount / 100;
 
   const discounted =
-    config.discountBase === "FEE" ? build(1 - rate) : original * (1 - rate);
+    config.discountBase === "FEE"
+      ? build(1 - discountRate)
+      : {
+          goldAmount: original.goldAmount * (1 - discountRate),
+          feeAmount: original.feeAmount * (1 - discountRate),
+          sellerProfitAmount:
+            original.sellerProfitAmount * (1 - discountRate),
+          vatAmount: original.vatAmount * (1 - discountRate),
+          total: original.total * (1 - discountRate),
+        };
 
-  return { price: round(discounted), originalPrice: round(original) };
+  const originalPrice = round(original.total);
+  const price = round(discounted.total);
+
+  return {
+    price,
+    originalPrice,
+
+    breakdown: {
+      discountPercent: normalizedDiscount,
+      discountBase: config.discountBase,
+
+      original: {
+        goldAmount: original.goldAmount,
+        feeAmount: original.feeAmount,
+        sellerProfitAmount: original.sellerProfitAmount,
+        vatAmount: original.vatAmount,
+        total: original.total,
+      },
+
+      discounted: {
+        goldAmount: discounted.goldAmount,
+        feeAmount: discounted.feeAmount,
+        sellerProfitAmount: discounted.sellerProfitAmount,
+        vatAmount: discounted.vatAmount,
+        total: discounted.total,
+      },
+
+      discountAmount: original.total - discounted.total,
+
+      originalPrice,
+      finalPrice: price,
+
+      roundingAdjustment: price - discounted.total,
+    },
+  };
 };

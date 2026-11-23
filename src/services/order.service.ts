@@ -173,7 +173,7 @@ export const createOrder = async ({
             WHERE "id" = 'main'
             FOR SHARE
             `;
-            
+
           // تنظیمات قیمت در همان Transaction خوانده می‌شوند
           const setting = await tx.pricingSetting.findUnique({
             where: { id: "main" },
@@ -354,16 +354,17 @@ export const createOrder = async ({
             totalWeight += weight * row.quantity;
 
             return {
-              variantId: variant.id,
-              productName: product.name,
-              productSlug: product.slug,
-              imageKey: product.images[0]?.key ?? null,
-              karat: 18,
-              weight,
-              quantity: row.quantity,
-              unitPrice: prices.price,
-              originalUnitPrice: prices.originalPrice,
-              discountPercent: product.discountPercent,
+            variantId: variant.id,
+            productName: product.name,
+            productSlug: product.slug,
+            imageKey: product.images[0]?.key ?? null,
+            karat: 18,
+            weight,
+            quantity: row.quantity,
+            unitPrice: prices.price,
+            originalUnitPrice: prices.originalPrice,
+            discountPercent: product.discountPercent,
+            breakdown: prices.breakdown as Prisma.InputJsonValue,
             };
           });
 
