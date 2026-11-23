@@ -443,11 +443,15 @@ model Order {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  idempotencyKey String? @db.VarChar(100)
+  requestHash    String? @db.VarChar(64)
+
   items        OrderItem[]
   payments     Payment[]
   smsLogs      SmsLog[]
   reservations StockReservation[]
 
+  @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([status, reservationExpiresAt])
