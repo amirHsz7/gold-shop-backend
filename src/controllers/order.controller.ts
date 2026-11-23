@@ -20,16 +20,39 @@ export const createOrderController: RequestHandler = async (
       return;
     }
 
-    const data = await createOrder({
-      userId: userIdOf(res),
-      idempotencyKey,
-      input: req.body,
+    const order = await createOrder({
+    userId: userIdOf(res),
+    idempotencyKey,
+    input: req.body,
     });
 
+    const data = {
+    id: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    totalAmount: order.totalAmount.toString(),
+    shippingCost: order.shippingCost.toString(),
+    freeShipping: order.freeShipping,
+    totalWeight: order.totalWeight.toString(),
+    reservationExpiresAt: order.reservationExpiresAt,
+    items: order.items.map((item) => ({
+        id: item.id,
+        productName: item.productName,
+        productSlug: item.productSlug,
+        imageKey: item.imageKey,
+        weight: item.weight.toString(),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice.toString(),
+        originalUnitPrice: item.originalUnitPrice.toString(),
+        discountPercent: item.discountPercent.toString(),
+    })),
+    };
+
     res.set("Cache-Control", "no-store");
+
     res.status(201).json({
-      status: "success",
-      data,
+        status: "success",
+        data,
     });
   } catch (error) {
     next(error);
