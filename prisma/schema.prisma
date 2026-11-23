@@ -18,21 +18,27 @@ enum OtpPurpose {
   LOGIN
 }
 
-model User {
-  id        String    @id @default(cuid())
-  mobile    String    @unique
-  fullName  String
-  role      UserRole  @default(CUSTOMER)
-  // ادمین‌ها: دریافت پیامک سفارش جدید
-  receivesOrderSms Boolean @default(false)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  comments  Comment[]
+enum ReservationStatus {
+  ACTIVE
+  COMMITTED
+  RELEASED
+}
 
-  addresses Address[]
-  cart      Cart?
-  orders    Order[]
-  cancelledOrders Order[] @relation("OrderCancelledBy")
+model User {
+  id               String    @id @default(cuid())
+  mobile           String    @unique
+  fullName         String
+  role             UserRole  @default(CUSTOMER)
+  // ادمین‌ها: دریافت پیامک سفارش جدید
+  receivesOrderSms Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  comments         Comment[]
+
+  addresses       Address[]
+  cart            Cart?
+  orders          Order[]
+  cancelledOrders Order[]    @relation("OrderCancelledBy")
   auditLogs       AuditLog[] @relation("AuditActor")
   auditTargets    AuditLog[] @relation("AuditTarget")
 }
@@ -118,7 +124,7 @@ model Product {
   variants ProductVariant[]
   images   ProductImage[]
   comments Comment[]
-  
+
   metaTitle       String? @db.VarChar(70)
   metaDescription String? @db.VarChar(200)
 
@@ -138,21 +144,23 @@ model ProductVariant {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  label     String?
-  sku       String?  @unique
-  weight    Decimal  @db.Decimal(10, 3) // گرم
-  fee       Decimal  @default(0) @db.Decimal(6, 3) // درصد اجرت از وزن
-  feeAmount Decimal  @default(0) @db.Decimal(15, 0) // اجرت ریالی
+  label         String?
+  sku           String?  @unique
+  weight        Decimal  @db.Decimal(10, 3) // گرم
+  fee           Decimal  @default(0) @db.Decimal(6, 3) // درصد اجرت از وزن
+  feeAmount     Decimal  @default(0) @db.Decimal(15, 0) // اجرت ریالی
   price         Decimal? @db.Decimal(15, 0) // قیمت نهایی بعد از تخفیف (تومان)
   originalPrice Decimal? @db.Decimal(15, 0) // قیمت قبل از تخفیف
-  stock     Int      @default(1)
-  isActive  Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  stock         Int      @default(1)
+  reservedStock Int      @default(0)
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  cartItems  CartItem[]
-  orderItems OrderItem[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+  reservations StockReservation[]
 
   @@unique([productId, weight])
   @@index([productId, isActive, sortOrder])
@@ -191,12 +199,12 @@ model Comment {
   parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies  Comment[] @relation("CommentReplies")
 
-  body      String        @db.Text
-  rating    Int?
-  status    CommentStatus @default(PENDING)
-  showOnHome Boolean      @default(false)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  body       String        @db.Text
+  rating     Int?
+  status     CommentStatus @default(PENDING)
+  showOnHome Boolean       @default(false)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
 
   @@index([productId, parentId, status, createdAt])
   @@index([parentId])
@@ -217,17 +225,17 @@ enum HomeSectionType {
 }
 
 model HomeSection {
-  id        String          @id @default(cuid())
-  type      HomeSectionType
-  title     String?
-  subtitle  String?
-  config    Json?
-  sortOrder Int             @default(0)
-  isActive  Boolean         @default(true)
-  singletonKey String?      @unique
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  items HomeSectionItem[]
+  id           String            @id @default(cuid())
+  type         HomeSectionType
+  title        String?
+  subtitle     String?
+  config       Json?
+  sortOrder    Int               @default(0)
+  isActive     Boolean           @default(true)
+  singletonKey String?           @unique
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  items        HomeSectionItem[]
 
   @@index([isActive, sortOrder])
 }
@@ -300,27 +308,27 @@ enum DiscountBase {
 }
 
 model PricingSetting {
-  id                  String       @id @default("main")
-  sellerProfitPercent Decimal      @default(7) @db.Decimal(5, 2)
-  vatPercent          Decimal      @default(10) @db.Decimal(5, 2)
+  id                  String  @id @default("main")
+  sellerProfitPercent Decimal @default(7) @db.Decimal(5, 2)
+  vatPercent          Decimal @default(10) @db.Decimal(5, 2)
 
   // قیمت هر گرم طلای ۱۸ عیار به تومان؛ فعلاً دستی، بعداً از TGN
-  goldPricePerGram    Int?
-  goldPriceSource     String       @default("manual")
-  goldPriceUpdatedAt  DateTime?
+  goldPricePerGram   Int?
+  goldPriceSource    String    @default("manual")
+  goldPriceUpdatedAt DateTime?
 
-  discountBase        DiscountBase @default(TOTAL)
-  feeAmountInRial     Boolean      @default(false)
-  roundTo             Int          @default(1000)
+  discountBase    DiscountBase @default(TOTAL)
+  feeAmountInRial Boolean      @default(false)
+  roundTo         Int          @default(1000)
 
   // نسخه‌ی قیمت منتشرشده؛ با هر تغییر قیمت طلا یکی زیاد می‌شود
-  priceVersion        Int          @default(1)
+  priceVersion Int @default(1)
 
   // ارسال
-  shippingCost          Int      @default(0)            // تومان
-  freeShippingMinWeight Decimal? @db.Decimal(10, 3)     // گرم؛ خالی = ارسال رایگان خاموش
+  shippingCost          Int      @default(0) // تومان
+  freeShippingMinWeight Decimal? @db.Decimal(10, 3) // گرم؛ خالی = ارسال رایگان خاموش
 
-  updatedAt           DateTime     @updatedAt
+  updatedAt DateTime @updatedAt
 }
 
 // ───────── تاریخچه‌ی قیمت طلا ─────────
@@ -380,11 +388,11 @@ model CartItem {
 
 enum OrderStatus {
   PENDING_PAYMENT // ساخته شده، منتظر پرداخت (موجودی نگه داشته شده)
-  PREPARING       // پرداخت موفق، در حال آماده‌سازی
-  SHIPPED         // ارسال شده، کد رهگیری ثبت شده
-  CANCELLED       // لغو توسط ادمین
-  EXPIRED         // پرداخت انجام نشد و مهلت تمام شد
-  NEEDS_REVIEW    // پرداخت دیرهنگام و موجودی نبود؛ بررسی دستی و بازگشت وجه
+  PREPARING // پرداخت موفق، در حال آماده‌سازی
+  SHIPPED // ارسال شده، کد رهگیری ثبت شده
+  CANCELLED // لغو توسط ادمین
+  EXPIRED // پرداخت انجام نشد و مهلت تمام شد
+  NEEDS_REVIEW // پرداخت دیرهنگام و موجودی نبود؛ بررسی دستی و بازگشت وجه
 }
 
 model Order {
@@ -399,8 +407,8 @@ model Order {
   recipientMobile String
   province        String
   city            String
-  address         String  @db.Text
-  postalCode      String  @db.VarChar(10)
+  address         String @db.Text
+  postalCode      String @db.VarChar(10)
 
   // مبالغ (تومان)
   itemsTotal    Decimal @db.Decimal(15, 0)
@@ -415,7 +423,9 @@ model Order {
   priceVersion     Int
 
   // موجودی
-  stockReleasedAt DateTime?
+  reservationExpiresAt DateTime?
+  stockReleasedAt      DateTime?
+  stockCommittedAt     DateTime?
 
   // ارسال
   trackingCode String?
@@ -433,12 +443,14 @@ model Order {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  items    OrderItem[]
-  payments Payment[]
-  smsLogs  SmsLog[]
+  items        OrderItem[]
+  payments     Payment[]
+  smsLogs      SmsLog[]
+  reservations StockReservation[]
 
   @@index([userId, createdAt])
   @@index([status, createdAt])
+  @@index([status, reservationExpiresAt])
 }
 
 // کپی (snapshot) از محصول در لحظه‌ی خرید؛ با تغییر یا حذف محصول عوض نمی‌شود
@@ -450,13 +462,13 @@ model OrderItem {
   variantId String?
   variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
-  productName  String
-  productSlug  String?
-  imageKey     String?
-  karat        Int     @default(18)
-  weight       Decimal @db.Decimal(10, 3)
-  quantity     Int
-  unitPrice    Decimal @db.Decimal(15, 0) // بعد از تخفیف
+  productName       String
+  productSlug       String?
+  imageKey          String?
+  karat             Int     @default(18)
+  weight            Decimal @db.Decimal(10, 3)
+  quantity          Int
+  unitPrice         Decimal @db.Decimal(15, 0) // بعد از تخفیف
   originalUnitPrice Decimal @db.Decimal(15, 0)
   discountPercent   Decimal @default(0) @db.Decimal(5, 2)
 
@@ -474,30 +486,51 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id        String        @id @default(cuid())
-  orderId   String
-  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  gateway   String        // simulator، بعداً نام درگاه واقعی
-  amount    Decimal       @db.Decimal(15, 0)
-  status    PaymentStatus @default(PENDING)
-  authority String?       // شناسه‌ی تراکنش درگاه
-  refId     String?       // کد پیگیری بانک
-  cardPan   String?       // فقط ۴ رقم آخر یا ماسک‌شده
+  id            String        @id @default(cuid())
+  orderId       String
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  gateway       String // simulator، بعداً نام درگاه واقعی
+  amount        Decimal       @db.Decimal(15, 0)
+  status        PaymentStatus @default(PENDING)
+  authority     String? // شناسه‌ی تراکنش درگاه
+  refId         String? // کد پیگیری بانک
+  cardPan       String? // فقط ۴ رقم آخر یا ماسک‌شده
   failureReason String?
-  expiresAt DateTime      // پایان نگه‌داشتن موجودی
-  paidAt    DateTime?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  expiresAt     DateTime // پایان نگه‌داشتن موجودی
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@unique([gateway, authority])
   @@index([orderId])
   @@index([status, expiresAt])
 }
 
+model StockReservation {
+  id String @id @default(cuid())
+
+  orderId   String
+  variantId String
+
+  quantity Int
+  status   ReservationStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, variantId])
+  @@index([variantId, status])
+  @@index([orderId, status])
+}
+
 // ───────── پیامک ─────────
 
 enum SmsType {
   ORDER_NEW_ADMIN
+  ORDER_PAID_CUSTOMER
   ORDER_SHIPPED_CUSTOMER
 }
 
@@ -530,12 +563,12 @@ model SmsLog {
 
 model AuditLog {
   id           String   @id @default(cuid())
-  action       String   // مثلاً ROLE_CHANGED
+  action       String // مثلاً ROLE_CHANGED
   actorId      String
   actor        User     @relation("AuditActor", fields: [actorId], references: [id])
   targetUserId String?
   target       User?    @relation("AuditTarget", fields: [targetUserId], references: [id])
-  details      Json?    // مثلاً { from: "CUSTOMER", to: "ADMIN" }
+  details      Json? // مثلاً { from: "CUSTOMER", to: "ADMIN" }
   createdAt    DateTime @default(now())
 
   @@index([actorId, createdAt])
