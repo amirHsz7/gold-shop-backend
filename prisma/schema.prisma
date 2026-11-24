@@ -497,6 +497,7 @@ model Payment {
   amount        Decimal       @db.Decimal(15, 0)
   status        PaymentStatus @default(PENDING)
   authority     String? // شناسه‌ی تراکنش درگاه
+  checkoutUrl   String?
   refId         String? // کد پیگیری بانک
   cardPan       String? // فقط ۴ رقم آخر یا ماسک‌شده
   failureReason String?
