@@ -22,6 +22,7 @@ import pricingSettingsRoutes from "./routes/pricing-settings.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
 import addressRoutes from "./routes/address.routes.js"
 import orderRoutes from "./routes/order.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
 
 // admin
 import adminProductRoutes from "./routes/admin-product.routes.js";
@@ -68,6 +69,8 @@ app.use("/cart", authMiddleware, cartRoutes);
 app.use("/addresses", authMiddleware, addressRoutes);
 
 app.use("/orders", authMiddleware, orderRoutes);
+
+app.use("/payments", authMiddleware, paymentRoutes);
 
 // panel admin APIs
 
