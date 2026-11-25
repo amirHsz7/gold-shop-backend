@@ -375,19 +375,31 @@ export const processPaymentCallback = async ({
       variants.map((variant) => [variant.id, variant]),
     );
 
-    // قبل از هر تغییری، اعتبار تمام موجودی‌ها را بررسی می‌کنیم.
+    // مجموع مقدار رزرو شده برای هر Variant
+    const reservedQuantityByVariant = new Map<string, number>();
+
     for (const reservation of reservations) {
-      const variant = variantMap.get(reservation.variantId);
+      const currentQuantity =
+        reservedQuantityByVariant.get(reservation.variantId) ?? 0;
+
+      reservedQuantityByVariant.set(
+        reservation.variantId,
+        currentQuantity + reservation.quantity,
+      );
+    }
+
+    // اعتبارسنجی موجودی بر اساس مجموع رزروهای هر Variant
+    for (const [variantId, totalQuantity] of reservedQuantityByVariant) {
+      const variant = variantMap.get(variantId);
 
       if (
         !variant ||
-        variant.stock < reservation.quantity ||
-        variant.reservedStock < reservation.quantity
+        variant.stock < totalQuantity ||
+        variant.reservedStock < totalQuantity
       ) {
         return markForReview("STOCK_RESERVATION_MISMATCH");
       }
     }
-
     // انتقال موجودی رزروشده به موجودی فروش‌رفته
     for (const reservation of reservations) {
       const result = await tx.productVariant.updateMany({
