@@ -47,6 +47,7 @@ export const savePricingSettings = async (input: PricingSettingsInput) => {
       goldPricePerGram: input.goldPricePerGram,
       goldPriceSource: "manual",
       goldPriceUpdatedAt: new Date(),
+      goldPriceStatus: "UNAVAILABLE" as const,
     }),
   };
 
