@@ -167,11 +167,13 @@ export const createPaymentForOrder = async ({
 interface ProcessPaymentCallbackParams {
   authority: string;
   payload: unknown;
+  userId: string;
 }
 
 export const processPaymentCallback = async ({
   authority,
   payload,
+  userId,
 }: ProcessPaymentCallbackParams) => {
   // ابتدا Payment را با شناسه درگاه پیدا می‌کنیم.
   const initialPayment = await prisma.payment.findFirst({
@@ -228,6 +230,10 @@ export const processPaymentCallback = async ({
       throw new AppError("اطلاعات سفارش یا پرداخت پیدا نشد.", 404);
     }
 
+    if (order.userId !== userId) {
+      throw new AppError("تراکنش پرداخت پیدا نشد.", 404);
+    }
+    
     // پرداخت موفق قبلی نباید دوباره پردازش شود.
     if (payment.status === "SUCCESS") {
       return {
