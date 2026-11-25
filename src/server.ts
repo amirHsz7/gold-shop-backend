@@ -1,20 +1,59 @@
 
 import app from "./app.js";
 import { disconnectDatabase } from "./lib/prisma.js";
+import { processExpiredReservations } from "./services/reservation-expiration.service.js";
 
 const PORT = Number(process.env.PORT) || 3000;
+const WORKER_INTERVAL_MS = 30_000;
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // اجرای اولیه Worker پس از آماده‌شدن سرور
+  void runExpirationWorker();
+
+  // اجرای دوره‌ای هر ۳۰ ثانیه
+  expirationWorkerInterval = setInterval(() => {
+    void runExpirationWorker();
+  }, WORKER_INTERVAL_MS);
 });
 
+let expirationWorkerInterval: ReturnType<typeof setInterval> | undefined;
+let isExpirationWorkerRunning = false;
 let isShuttingDown = false;
+
+async function runExpirationWorker() {
+  // جلوگیری از اجرای هم‌زمان چند نسخه از Worker در همین Process
+  if (isExpirationWorkerRunning || isShuttingDown) {
+    return;
+  }
+
+  isExpirationWorkerRunning = true;
+
+  try {
+    const result = await processExpiredReservations();
+
+    if (result.scanned > 0) {
+      console.log("[Reservation Worker]", result);
+    }
+  } catch (error) {
+    console.error("[Reservation Worker] Execution failed:", error);
+  } finally {
+    isExpirationWorkerRunning = false;
+  }
+}
 
 function shutdown() {
   if (isShuttingDown) return;
 
   isShuttingDown = true;
   console.log("Shutting down server...");
+
+  // جلوگیری از اجرای مجدد Worker هنگام خاموش‌شدن
+  if (expirationWorkerInterval) {
+    clearInterval(expirationWorkerInterval);
+    expirationWorkerInterval = undefined;
+  }
 
   server.close(async (error) => {
     console.log("HTTP server close callback executed");
