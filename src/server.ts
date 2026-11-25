@@ -60,11 +60,6 @@ async function shutdown() {
     expirationWorkerInterval = undefined;
   }
 
-  if (expirationWorkerPromise) {
-    console.log("Waiting for reservation worker to finish...");
-    await expirationWorkerPromise;
-  }
-
   server.close(async (error) => {
     console.log("HTTP server close callback executed");
 
@@ -72,7 +67,11 @@ async function shutdown() {
       console.error("Error closing server:", error);
       process.exitCode = 1;
     }
-
+    // منتظر پایان Worker فعال می‌مانیم.
+    if (expirationWorkerPromise) {
+      console.log("Waiting for reservation worker to finish...");
+      await expirationWorkerPromise;
+    }
     try {
       console.log("Closing database connections...");
 
