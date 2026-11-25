@@ -400,24 +400,26 @@ export const processPaymentCallback = async ({
         return markForReview("STOCK_RESERVATION_MISMATCH");
       }
     }
+    
     // انتقال موجودی رزروشده به موجودی فروش‌رفته
-    for (const reservation of reservations) {
+    // هر Variant فقط یک‌بار و به‌اندازه مجموع رزروهایش به‌روزرسانی می‌شود.
+    for (const [variantId, totalQuantity] of reservedQuantityByVariant) {
       const result = await tx.productVariant.updateMany({
         where: {
-          id: reservation.variantId,
+          id: variantId,
           stock: {
-            gte: reservation.quantity,
+            gte: totalQuantity,
           },
           reservedStock: {
-            gte: reservation.quantity,
+            gte: totalQuantity,
           },
         },
         data: {
           stock: {
-            decrement: reservation.quantity,
+            decrement: totalQuantity,
           },
           reservedStock: {
-            decrement: reservation.quantity,
+            decrement: totalQuantity,
           },
         },
       });
