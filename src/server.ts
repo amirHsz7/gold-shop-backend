@@ -2,7 +2,7 @@
 import app from "./app.js";
 import { disconnectDatabase } from "./lib/prisma.js";
 import { processExpiredReservations } from "./services/reservation-expiration.service.js";
-
+let expirationWorkerPromise: Promise<void> | undefined;
 const PORT = Number(process.env.PORT) || 3000;
 const WORKER_INTERVAL_MS = 30_000;
 
@@ -22,28 +22,33 @@ let expirationWorkerInterval: ReturnType<typeof setInterval> | undefined;
 let isExpirationWorkerRunning = false;
 let isShuttingDown = false;
 
-async function runExpirationWorker() {
+function runExpirationWorker(): Promise<void> {
   // جلوگیری از اجرای هم‌زمان چند نسخه از Worker در همین Process
   if (isExpirationWorkerRunning || isShuttingDown) {
-    return;
+    return Promise.resolve();
   }
 
   isExpirationWorkerRunning = true;
 
-  try {
-    const result = await processExpiredReservations();
+  expirationWorkerPromise = (async () => {
+    try {
+      const result = await processExpiredReservations();
 
-    if (result.scanned > 0) {
-      console.log("[Reservation Worker]", result);
+      if (result.scanned > 0) {
+        console.log("[Reservation Worker]", result);
+      }
+    } catch (error) {
+      console.error("[Reservation Worker] Execution failed:", error);
+    } finally {
+      isExpirationWorkerRunning = false;
+      expirationWorkerPromise = undefined;
     }
-  } catch (error) {
-    console.error("[Reservation Worker] Execution failed:", error);
-  } finally {
-    isExpirationWorkerRunning = false;
-  }
+  })();
+
+  return expirationWorkerPromise;
 }
 
-function shutdown() {
+async function shutdown() {
   if (isShuttingDown) return;
 
   isShuttingDown = true;
@@ -53,6 +58,11 @@ function shutdown() {
   if (expirationWorkerInterval) {
     clearInterval(expirationWorkerInterval);
     expirationWorkerInterval = undefined;
+  }
+
+  if (expirationWorkerPromise) {
+    console.log("Waiting for reservation worker to finish...");
+    await expirationWorkerPromise;
   }
 
   server.close(async (error) => {
