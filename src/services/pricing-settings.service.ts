@@ -10,6 +10,7 @@ const DEFAULT_PRICING = {
   goldPricePerGram: null as number | null,
   goldPriceUpdatedAt: null as Date | null,
   updatedAt: null as Date | null,
+  goldPriceStatus: "UNAVAILABLE" as const,
 };
 
 export const getPricingSettings = async () => {
@@ -23,6 +24,7 @@ export const getPricingSettings = async () => {
     sellerProfitPercent: row.sellerProfitPercent.toNumber(),
     vatPercent: row.vatPercent.toNumber(),
     goldPricePerGram: row.goldPricePerGram,
+    goldPriceStatus: row.goldPriceStatus,
     goldPriceUpdatedAt: row.goldPriceUpdatedAt,
     updatedAt: row.updatedAt,
   };

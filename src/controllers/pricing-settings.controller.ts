@@ -4,15 +4,27 @@ import {
   savePricingSettings,
 } from "../services/pricing-settings.service.js";
 
+
 // عمومی: فرانت برای محاسبه‌ی قیمت نمایشی لازم دارد (updatedAt را بیرون نمی‌دهیم)
 export const getPublicPricingSettings: RequestHandler = async (_req, res, next) => {
   try {
-    const { sellerProfitPercent, vatPercent, goldPricePerGram, goldPriceUpdatedAt } =
-      await getPricingSettings();
+    const {
+      sellerProfitPercent,
+      vatPercent,
+      goldPricePerGram,
+      goldPriceStatus,
+      goldPriceUpdatedAt,
+    } = await getPricingSettings();
 
     res.status(200).json({
       status: "success",
-      data: { sellerProfitPercent, vatPercent, goldPricePerGram, goldPriceUpdatedAt },
+      data: {
+        sellerProfitPercent,
+        vatPercent,
+        goldPricePerGram,
+        goldPriceStatus,
+        goldPriceUpdatedAt,
+      },
     });
   } catch (error) {
     next(error);
