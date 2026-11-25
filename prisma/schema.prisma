@@ -24,6 +24,11 @@ enum ReservationStatus {
   RELEASED
 }
 
+enum GoldPriceStatus {
+  AVAILABLE
+  UNAVAILABLE
+}
+
 model User {
   id               String    @id @default(cuid())
   mobile           String    @unique
@@ -316,6 +321,8 @@ model PricingSetting {
   goldPricePerGram   Int?
   goldPriceSource    String    @default("manual")
   goldPriceUpdatedAt DateTime?
+
+  goldPriceStatus GoldPriceStatus @default(UNAVAILABLE)
 
   discountBase    DiscountBase @default(TOTAL)
   feeAmountInRial Boolean      @default(false)
