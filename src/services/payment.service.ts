@@ -2,6 +2,8 @@ import { prisma } from "../lib/prisma.js";
 import { MockPaymentProvider } from "../payments/mock-payment.provider.js";
 import { AppError } from "../utils/app-error.js";
 
+const CALLBACK_GRACE_PERIOD_MS = 5 * 60 * 1000;
+
 const paymentProvider = new MockPaymentProvider();
 
 interface CreatePaymentParams {
@@ -233,7 +235,7 @@ export const processPaymentCallback = async ({
     if (order.userId !== userId) {
       throw new AppError("تراکنش پرداخت پیدا نشد.", 404);
     }
-    
+
     // پرداخت موفق قبلی نباید دوباره پردازش شود.
     if (payment.status === "SUCCESS") {
       return {
@@ -308,9 +310,13 @@ export const processPaymentCallback = async ({
     }
 
     // موفقیت پرداخت بعد از پایان مهلت رزرو
+    const reservationDeadline = order.reservationExpiresAt
+    ? order.reservationExpiresAt.getTime() + CALLBACK_GRACE_PERIOD_MS
+    : null;
+
     if (
-      !order.reservationExpiresAt ||
-      order.reservationExpiresAt <= now
+      reservationDeadline === null ||
+      now.getTime() > reservationDeadline
     ) {
       return markForReview("RESERVATION_EXPIRED");
     }
