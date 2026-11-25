@@ -5,7 +5,6 @@ const CALLBACK_GRACE_PERIOD_MS = 5 * 60 * 1000;
 
 type ExpirationResult =
   | "EXPIRED"
-  | "ALREADY_PROCESSED"
   | "NEEDS_REVIEW"
   | "NOT_ELIGIBLE";
 
@@ -129,23 +128,33 @@ const expireOrderReservation = async (
       variants.map((variant) => [variant.id, variant]),
     );
 
-    // پیش از هر تغییری، تمام رزروها را اعتبارسنجی می‌کنیم.
-    for (const reservation of reservations) {
-      const variant = variantMap.get(reservation.variantId);
+    // مجموع مقدار رزروشده برای هر Variant را محاسبه می‌کنیم.
+    const reservedQuantityByVariant = new Map<string, number>();
 
-      if (
-        !variant ||
-        variant.reservedStock < reservation.quantity
-      ) {
+    for (const reservation of reservations) {
+    const currentQuantity =
+        reservedQuantityByVariant.get(reservation.variantId) ?? 0;
+
+    reservedQuantityByVariant.set(
+        reservation.variantId,
+        currentQuantity + reservation.quantity,
+    );
+    }
+
+    // پیش از هر تغییری، موجودی تجمیعی تمام Variantها را اعتبارسنجی می‌کنیم.
+    for (const [variantId, totalQuantity] of reservedQuantityByVariant) {
+    const variant = variantMap.get(variantId);
+
+    if (!variant || variant.reservedStock < totalQuantity) {
         await tx.order.update({
-          where: { id: order.id },
-          data: {
+        where: { id: order.id },
+        data: {
             status: "NEEDS_REVIEW",
-          },
+        },
         });
 
         return "NEEDS_REVIEW";
-      }
+    }
     }
 
     // تمام اعتبارسنجی‌ها موفق بوده‌اند.
@@ -160,30 +169,29 @@ const expireOrderReservation = async (
         failureReason: "RESERVATION_EXPIRED",
     },
     });
-    
-    // آزادسازی موجودی رزروشده
-    for (const reservation of reservations) {
-      const result = await tx.productVariant.updateMany({
+
+    // آزادسازی موجودی هر Variant بر اساس مجموع مقدار رزروها
+    for (const [variantId, totalQuantity] of reservedQuantityByVariant) {
+    const result = await tx.productVariant.updateMany({
         where: {
-          id: reservation.variantId,
-          reservedStock: {
-            gte: reservation.quantity,
-          },
+        id: variantId,
+        reservedStock: {
+            gte: totalQuantity,
+        },
         },
         data: {
-          reservedStock: {
-            decrement: reservation.quantity,
-          },
+        reservedStock: {
+            decrement: totalQuantity,
         },
-      });
+        },
+    });
 
-      if (result.count !== 1) {
+    if (result.count !== 1) {
         throw new Error(
-          `Failed to release reservation for variant ${reservation.variantId}`,
+        `Failed to release reservation for variant ${variantId}`,
         );
-      }
     }
-
+    }
     // تغییر وضعیت تمام رزروها
     const releasedReservations = await tx.stockReservation.updateMany({
       where: {
@@ -231,11 +239,6 @@ export const processExpiredReservations = async () => {
       },
       stockReleasedAt: null,
       stockCommittedAt: null,
-      reservations: {
-        some: {
-          status: "ACTIVE",
-        },
-      },
     },
     select: {
       id: true,
