@@ -181,6 +181,7 @@ export const createOrder = async ({
 
           if (
             !setting ||
+            setting.goldPriceStatus !== "AVAILABLE" ||
             !setting.goldPricePerGram ||
             setting.goldPricePerGram <= 0
           ) {
