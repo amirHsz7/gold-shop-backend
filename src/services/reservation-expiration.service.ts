@@ -68,17 +68,6 @@ const expireOrderReservation = async (
       return "NEEDS_REVIEW";
     }
 
-    // تمام پرداخت‌های در انتظار را منقضی می‌کنیم.
-    await tx.payment.updateMany({
-      where: {
-        orderId: order.id,
-        status: "PENDING",
-      },
-      data: {
-        status: "EXPIRED",
-        failureReason: "RESERVATION_EXPIRED",
-      },
-    });
 
     const reservations = await tx.stockReservation.findMany({
       where: {
@@ -159,6 +148,19 @@ const expireOrderReservation = async (
       }
     }
 
+    // تمام اعتبارسنجی‌ها موفق بوده‌اند.
+    // اکنون پرداخت‌های در انتظار را منقضی می‌کنیم.
+    await tx.payment.updateMany({
+    where: {
+        orderId: order.id,
+        status: "PENDING",
+    },
+    data: {
+        status: "EXPIRED",
+        failureReason: "RESERVATION_EXPIRED",
+    },
+    });
+    
     // آزادسازی موجودی رزروشده
     for (const reservation of reservations) {
       const result = await tx.productVariant.updateMany({
