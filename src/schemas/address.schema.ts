@@ -3,17 +3,11 @@ import { isValidCity, isValidProvince } from "../lib/iran-geo.js";
 
 const toEnglishDigits = (value: string) =>
   value
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+    .replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
 
-export const addressSchema = z
+export const shippingAddressSchema = z
   .object({
-    title: z
-      .string()
-      .trim()
-      .min(1, "عنوان آدرس را وارد کنید")
-      .max(50, "عنوان آدرس نمی‌تواند بیشتر از ۵۰ کاراکتر باشد"),
-
     province: z.string().trim().min(1, "استان را انتخاب کنید"),
 
     city: z.string().trim().min(1, "شهر را انتخاب کنید"),
@@ -22,7 +16,7 @@ export const addressSchema = z
       .string()
       .trim()
       .min(10, "آدرس کامل باید حداقل ۱۰ کاراکتر باشد")
-      .max(500, "آدرس نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد"),
+      .max(500, "آدرس کامل نمی‌تواند بیشتر از ۵۰۰ کاراکتر باشد"),
 
     postalCode: z
       .string()
@@ -48,5 +42,13 @@ export const addressSchema = z
       });
     }
   });
+
+export const addressSchema = shippingAddressSchema.safeExtend({
+  title: z
+    .string()
+    .trim()
+    .min(1, "عنوان آدرس را وارد کنید")
+    .max(50, "عنوان آدرس نمی‌تواند بیشتر از ۵۰ کاراکتر باشد"),
+});
 
 export type AddressInput = z.infer<typeof addressSchema>;

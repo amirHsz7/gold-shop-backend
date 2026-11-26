@@ -4,6 +4,7 @@ import { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { calcVariantPrice } from "../lib/pricing.js";
 import { AppError } from "../utils/app-error.js";
+import type { CreateOrderInput } from "../schemas/order.schema.js";
 
 const RESERVATION_TTL_MS = 15 * 60 * 1000;
 const MAX_CART_QUANTITY = 99;
@@ -17,27 +18,24 @@ export interface CheckoutInput {
 interface CreateOrderParams {
   userId: string;
   idempotencyKey: string;
-  input: CheckoutInput;
+  input: CreateOrderInput;
 }
-
-const normalizeCheckoutInput = (input: CheckoutInput) => ({
-  addressId: input.addressId.trim(),
-  recipientName: input.recipientName.trim(),
-  recipientMobile: input.recipientMobile.trim(),
-});
 
 const createRequestHash = (
   userId: string,
-  input: CheckoutInput,
+  input: CreateOrderInput,
 ) => {
   const payload = JSON.stringify({
     userId,
-    ...normalizeCheckoutInput(input),
+    addressId: input.addressId,
+    shippingAddress: input.shippingAddress,
+    recipientName: input.recipientName,
+    recipientMobile: input.recipientMobile,
+    expectedTotalAmount: input.expectedTotalAmount,
   });
 
   return createHash("sha256").update(payload).digest("hex");
 };
-
 const round3 = (value: number) =>
   Math.round(value * 1000) / 1000;
 
@@ -88,7 +86,6 @@ export const createOrder = async ({
   idempotencyKey,
   input,
 }: CreateOrderParams) => {
-  const normalizedInput = normalizeCheckoutInput(input);
 
   if (
     !idempotencyKey ||
@@ -98,17 +95,17 @@ export const createOrder = async ({
   }
 
   if (
-    normalizedInput.recipientName.length < 3 ||
-    normalizedInput.recipientName.length > 100
+    input.recipientName.length < 3 ||
+    input.recipientName.length > 100
   ) {
     throw new AppError("نام گیرنده معتبر نیست.", 400);
   }
 
-  if (!/^09\d{9}$/.test(normalizedInput.recipientMobile)) {
+  if (!/^09\d{9}$/.test(input.recipientMobile)) {
     throw new AppError("شماره موبایل گیرنده معتبر نیست.", 400);
   }
 
-  const requestHash = createRequestHash(userId, normalizedInput);
+  const requestHash = createRequestHash(userId, input);
 
   // درخواست تکراری قبل از ورود به Transaction
   const existing = await getExistingOrder(
@@ -151,7 +148,7 @@ export const createOrder = async ({
           // بررسی مالکیت آدرس
           const address = await tx.address.findFirst({
             where: {
-              id: normalizedInput.addressId,
+              id: input.addressId,
               userId,
             },
             select: {
@@ -403,8 +400,8 @@ export const createOrder = async ({
 
               status: "PENDING_PAYMENT",
 
-              recipientName: normalizedInput.recipientName,
-              recipientMobile: normalizedInput.recipientMobile,
+              recipientName: input.recipientName,
+              recipientMobile: input.recipientMobile,
 
               province: address.province,
               city: address.city,
