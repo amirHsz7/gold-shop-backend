@@ -9,12 +9,6 @@ import type { CreateOrderInput } from "../schemas/order.schema.js";
 const RESERVATION_TTL_MS = 15 * 60 * 1000;
 const MAX_CART_QUANTITY = 99;
 
-export interface CheckoutInput {
-  addressId: string;
-  recipientName: string;
-  recipientMobile: string;
-}
-
 interface CreateOrderParams {
   userId: string;
   idempotencyKey: string;
@@ -146,7 +140,7 @@ export const createOrder = async ({
           }
 
           // بررسی مالکیت آدرس
-          const address = await tx.address.findFirst({
+          const address = input.shippingAddress ?? await tx.address.findFirst({
             where: {
               id: input.addressId,
               userId,
@@ -385,6 +379,25 @@ export const createOrder = async ({
           assertSafeMoney(discountTotal);
           assertSafeMoney(shippingCost);
           assertSafeMoney(totalAmount);
+
+          if (input.expectedTotalAmount !== totalAmount) {
+            throw new AppError(
+              "مبلغ سفارش تغییر کرده است. مبلغ جدید را تأیید کنید.",
+              409,
+              {
+                code: "PRICE_CHANGED",
+                data: {
+                  itemsTotal,
+                  discountTotal,
+                  subtotal,
+                  shippingCost,
+                  totalAmount,
+                  freeShipping,
+                  totalWeight,
+                },
+              },
+            );
+          }
 
           const now = new Date();
           const reservationExpiresAt = new Date(
