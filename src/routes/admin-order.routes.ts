@@ -3,8 +3,69 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { validate } from "../middlewares/validate.middleware.js";
 import { AppError } from "../utils/app-error.js";
+import { OrderStatus } from "../generated/prisma/client.js";
+import { validateQuery } from "../middlewares/validate-query.middleware.js";
 
 const router = Router();
+
+const positiveIntQuery = z.string().trim()
+  .transform(value => value
+    .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))))
+  .pipe(z.string().regex(/^\d+$/))
+  .transform(Number)
+  .pipe(z.number().int().min(1).max(2_147_483_647));
+
+const listOrdersQuery = z.object({
+  page: positiveIntQuery.default(1),
+  limit: positiveIntQuery.pipe(z.number().max(100)).default(20),
+  status: z.enum(OrderStatus).optional(),
+  orderNumber: positiveIntQuery.optional(),
+});
+
+router.get("/", validateQuery(listOrdersQuery), async (_req, res) => {
+  const { page, limit, status, orderNumber } =
+    res.locals.query as z.infer<typeof listOrdersQuery>;
+
+  const where = {
+    ...(status && { status }),
+    ...(orderNumber && { orderNumber }),
+  };
+
+  const [items, total] = await prisma.$transaction([
+    prisma.order.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { orderNumber: "desc" }],
+      skip: (page - 1) * limit,
+      take: limit,
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        recipientName: true,
+        totalAmount: true,
+        totalWeight: true,
+        createdAt: true,
+        paidAt: true,
+        shippedAt: true,
+      },
+    }),
+    prisma.order.count({ where }),
+  ], { isolationLevel: "RepeatableRead" });
+
+  res.set("Cache-Control", "private, no-store").json({
+    status: "success",
+    data: {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    },
+  });
+});
 
 const shipSchema = z.object({
   trackingCode: z.string().trim().min(1),
