@@ -67,6 +67,81 @@ router.get("/", validateQuery(listOrdersQuery), async (_req, res) => {
   });
 });
 
+router.get("/:id", async (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true,
+      orderNumber: true,
+      status: true,
+      createdAt: true,
+
+      user: {
+        select: { fullName: true, mobile: true },
+      },
+      recipientName: true,
+      recipientMobile: true,
+      province: true,
+      city: true,
+      address: true,
+      postalCode: true,
+
+      totalWeight: true,
+      goldPricePerGram: true,
+      itemsTotal: true,
+      discountTotal: true,
+      shippingCost: true,
+      totalAmount: true,
+
+      paidAt: true,
+      shippedAt: true,
+      trackingCode: true,
+      reservationExpiresAt: true,
+      stockCommittedAt: true,
+      stockReleasedAt: true,
+      cancelledAt: true,
+      cancelReason: true,
+      refundPending: true,
+      refundedAt: true,
+
+      items: {
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          productName: true,
+          karat: true,
+          weight: true,
+          quantity: true,
+          originalUnitPrice: true,
+          unitPrice: true,
+        },
+      },
+
+      payments: {
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: {
+          id: true,
+          gateway: true,
+          amount: true,
+          status: true,
+          refId: true,
+          failureReason: true,
+          createdAt: true,
+          paidAt: true,
+        },
+      },
+    },
+  });
+
+  if (!order) {
+    throw new AppError("سفارش پیدا نشد.", 404);
+  }
+
+  res.json({ status: "success", data: order });
+});
+
 const shipSchema = z.object({
   trackingCode: z.string().trim().min(1),
 }).strict();
