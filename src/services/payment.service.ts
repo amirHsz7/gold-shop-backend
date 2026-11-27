@@ -2,6 +2,8 @@ import { prisma } from "../lib/prisma.js";
 import { MockPaymentProvider } from "../payments/mock-payment.provider.js";
 import { AppError } from "../utils/app-error.js";
 import { ADMIN_ROLES } from "../utils/roles.js";
+import { releaseOrderReservation } from "./release-reservation.service.js";
+
 const CALLBACK_GRACE_PERIOD_MS = 5 * 60 * 1000;
 
 const paymentProvider = new MockPaymentProvider();
@@ -308,17 +310,17 @@ export const processPaymentCallback = async ({
     ) {
       return markForReview("ORDER_NOT_PAYABLE");
     }
+    
+    if (!order.reservationExpiresAt) {
+      return markForReview("MISSING_RESERVATION_DEADLINE");
+    }
 
-    // موفقیت پرداخت بعد از پایان مهلت رزرو
-    const reservationDeadline = order.reservationExpiresAt
-    ? order.reservationExpiresAt.getTime() + CALLBACK_GRACE_PERIOD_MS
-    : null;
+    if (now >= order.reservationExpiresAt) {
+      const released = await releaseOrderReservation(tx, order.id, now);
 
-    if (
-      reservationDeadline === null ||
-      now.getTime() > reservationDeadline
-    ) {
-      return markForReview("RESERVATION_EXPIRED");
+      return markForReview(
+        released ? "RESERVATION_EXPIRED" : "STOCK_RESERVATION_MISMATCH",
+      );
     }
 
     // تمام رزروهای سفارش باید ACTIVE باشند.

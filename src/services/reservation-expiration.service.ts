@@ -1,20 +1,14 @@
-
 import { prisma } from "../lib/prisma.js";
+import { releaseOrderReservation } from "./release-reservation.service.js";
 
-const CALLBACK_GRACE_PERIOD_MS = 5 * 60 * 1000;
-
-type ExpirationResult =
-  | "EXPIRED"
-  | "NEEDS_REVIEW"
-  | "NOT_ELIGIBLE";
+type ExpirationResult = "EXPIRED" | "NEEDS_REVIEW" | "NOT_ELIGIBLE";
 
 const expireOrderReservation = async (
   orderId: string,
   expirationCutoff: Date,
 ): Promise<ExpirationResult> => {
   return prisma.$transaction(async (tx) => {
-    // ابتدا سفارش را قفل می‌کنیم.
-    // Callback پرداخت نیز باید همین ترتیب قفل‌گذاری را رعایت کند.
+    // مثل callback پرداخت، ابتدا سفارش را قفل می‌کنیم.
     await tx.$queryRaw`
       SELECT "id"
       FROM "Order"
@@ -33,6 +27,8 @@ const expireOrderReservation = async (
       },
     });
 
+    // ممکن است بعد از انتخاب این سفارش توسط worker،
+    // callback پرداخت زودتر قفل را گرفته و سفارش را پردازش کرده باشد.
     if (
       !order ||
       order.status !== "PENDING_PAYMENT" ||
@@ -44,208 +40,44 @@ const expireOrderReservation = async (
       return "NOT_ELIGIBLE";
     }
 
-    // اگر پرداخت موفق ثبت شده باشد، نباید رزرو را آزاد کنیم.
     const successfulPayment = await tx.payment.findFirst({
       where: {
         orderId: order.id,
         status: "SUCCESS",
       },
-      select: {
-        id: true,
-      },
+      select: { id: true },
     });
 
-    if (successfulPayment) {
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          status: "NEEDS_REVIEW",
-          refundPending: true,
-        },
-      });
+    const released = await releaseOrderReservation(tx, order.id, new Date());
 
-      return "NEEDS_REVIEW";
-    }
+    const status = released && !successfulPayment
+      ? "EXPIRED"
+      : "NEEDS_REVIEW";
 
-
-    const reservations = await tx.stockReservation.findMany({
-      where: {
-        orderId: order.id,
-      },
-      orderBy: {
-        variantId: "asc",
-      },
-      select: {
-        id: true,
-        variantId: true,
-        quantity: true,
-        status: true,
-      },
-    });
-
-    // وضعیت غیرمنتظره رزروها نیازمند بررسی است.
-    if (
-      reservations.length === 0 ||
-      reservations.some((item) => item.status !== "ACTIVE")
-    ) {
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          status: "NEEDS_REVIEW",
-        },
-      });
-
-      return "NEEDS_REVIEW";
-    }
-
-    const variantIds = [
-      ...new Set(reservations.map((item) => item.variantId)),
-    ].sort();
-
-    // قفل Variantها با ترتیب ثابت
-    for (const variantId of variantIds) {
-      await tx.$queryRaw`
-        SELECT "id"
-        FROM "ProductVariant"
-        WHERE "id" = ${variantId}
-        FOR UPDATE
-      `;
-    }
-
-    const variants = await tx.productVariant.findMany({
-      where: {
-        id: {
-          in: variantIds,
-        },
-      },
-      select: {
-        id: true,
-        reservedStock: true,
-      },
-    });
-
-    const variantMap = new Map(
-      variants.map((variant) => [variant.id, variant]),
-    );
-
-    // مجموع مقدار رزروشده برای هر Variant را محاسبه می‌کنیم.
-    const reservedQuantityByVariant = new Map<string, number>();
-
-    for (const reservation of reservations) {
-    const currentQuantity =
-        reservedQuantityByVariant.get(reservation.variantId) ?? 0;
-
-    reservedQuantityByVariant.set(
-        reservation.variantId,
-        currentQuantity + reservation.quantity,
-    );
-    }
-
-    // پیش از هر تغییری، موجودی تجمیعی تمام Variantها را اعتبارسنجی می‌کنیم.
-    for (const [variantId, totalQuantity] of reservedQuantityByVariant) {
-    const variant = variantMap.get(variantId);
-
-    if (!variant || variant.reservedStock < totalQuantity) {
-        await tx.order.update({
-        where: { id: order.id },
-        data: {
-            status: "NEEDS_REVIEW",
-        },
-        });
-
-        return "NEEDS_REVIEW";
-    }
-    }
-
-    // تمام اعتبارسنجی‌ها موفق بوده‌اند.
-    // اکنون پرداخت‌های در انتظار را منقضی می‌کنیم.
-    await tx.payment.updateMany({
-    where: {
-        orderId: order.id,
-        status: "PENDING",
-    },
-    data: {
-        status: "EXPIRED",
-        failureReason: "RESERVATION_EXPIRED",
-    },
-    });
-
-    // آزادسازی موجودی هر Variant بر اساس مجموع مقدار رزروها
-    for (const [variantId, totalQuantity] of reservedQuantityByVariant) {
-    const result = await tx.productVariant.updateMany({
-        where: {
-        id: variantId,
-        reservedStock: {
-            gte: totalQuantity,
-        },
-        },
-        data: {
-        reservedStock: {
-            decrement: totalQuantity,
-        },
-        },
-    });
-
-    if (result.count !== 1) {
-        throw new Error(
-        `Failed to release reservation for variant ${variantId}`,
-        );
-    }
-    }
-    // تغییر وضعیت تمام رزروها
-    const releasedReservations = await tx.stockReservation.updateMany({
-      where: {
-        orderId: order.id,
-        status: "ACTIVE",
-      },
-      data: {
-        status: "RELEASED",
-      },
-    });
-
-    if (releasedReservations.count !== reservations.length) {
-      throw new Error(
-        `Reservation count mismatch for order ${order.id}`,
-      );
-    }
-
-    // انقضای سفارش و ثبت زمان آزادسازی
     await tx.order.update({
       where: { id: order.id },
       data: {
-        status: "EXPIRED",
-        stockReleasedAt: new Date(),
+        status,
+        ...(successfulPayment && { refundPending: true }),
       },
     });
 
-    return "EXPIRED";
+    return status;
   });
 };
 
 export const processExpiredReservations = async () => {
-  const now = new Date();
-
-  // سفارش فقط پس از ۱۵ دقیقه مهلت پرداخت
-  // به‌علاوه ۵ دقیقه مهلت اطمینان بررسی می‌شود.
-  const expirationCutoff = new Date(
-    now.getTime() - CALLBACK_GRACE_PERIOD_MS,
-  );
+  const expirationCutoff = new Date();
 
   const candidates = await prisma.order.findMany({
     where: {
       status: "PENDING_PAYMENT",
-      reservationExpiresAt: {
-        lte: expirationCutoff,
-      },
+      reservationExpiresAt: { lte: expirationCutoff },
       stockReleasedAt: null,
       stockCommittedAt: null,
     },
-    select: {
-      id: true,
-    },
-    orderBy: {
-      reservationExpiresAt: "asc",
-    },
+    select: { id: true },
+    orderBy: { reservationExpiresAt: "asc" },
     take: 100,
   });
 
@@ -259,10 +91,7 @@ export const processExpiredReservations = async () => {
 
   for (const candidate of candidates) {
     try {
-      const result = await expireOrderReservation(
-        candidate.id,
-        expirationCutoff,
-      );
+      const result = await expireOrderReservation(candidate.id, expirationCutoff);
 
       if (result === "EXPIRED") {
         results.expired++;
