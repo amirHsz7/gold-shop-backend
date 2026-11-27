@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "seed": "tsx prisma/seed.ts",
+    "sms:preview": "node --import tsx prisma/preview-order-sms.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "postinstall": "prisma skills sync || exit 0",
