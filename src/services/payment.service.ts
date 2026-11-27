@@ -1,7 +1,7 @@
 import { prisma } from "../lib/prisma.js";
 import { MockPaymentProvider } from "../payments/mock-payment.provider.js";
 import { AppError } from "../utils/app-error.js";
-
+import { ADMIN_ROLES } from "../utils/roles.js";
 const CALLBACK_GRACE_PERIOD_MS = 5 * 60 * 1000;
 
 const paymentProvider = new MockPaymentProvider();
@@ -464,15 +464,59 @@ export const processPaymentCallback = async ({
     });
 
     // انتقال سفارش به مرحله آماده‌سازی
-    await tx.order.update({
-      where: {
-        id: order.id,
-      },
+    const paidOrder = await tx.order.update({
+      where: { id: order.id },
       data: {
         status: "PREPARING",
         stockCommittedAt: now,
         paidAt: now,
       },
+      select: {
+        user: {
+          select: { mobile: true },
+        },
+        items: {
+          select: {
+            productName: true,
+            weight: true,
+            quantity: true,
+          },
+        },
+      },
+    });
+
+    const recipients = await tx.user.findMany({
+      where: {
+        role: { in: ADMIN_ROLES },
+        receivesOrderSms: true,
+      },
+      select: { mobile: true },
+    });
+
+    const lines = paidOrder.items.map(
+      (item) =>
+        `${item.productName}، ${item.weight.toString()} گرم × ${item.quantity}`,
+    );
+
+    const adminText =
+      `سفارش ${order.orderNumber} پرداخت شد.\n${lines.join("\n")}`;
+
+    await tx.smsLog.createMany({
+      data: [
+        {
+          orderId: order.id,
+          type: "ORDER_PAID_CUSTOMER",
+          recipient: paidOrder.user.mobile,
+          text: `خرید شما با شماره سفارش ${order.orderNumber} ثبت شد و در حال آماده‌سازی است.`,
+        },
+        ...recipients.map(({ mobile }) => ({
+          orderId: order.id,
+          type: "ORDER_NEW_ADMIN" as const,
+          recipient: mobile,
+          text: adminText,
+        })),
+      ],
+      skipDuplicates: true,
     });
 
     return {
