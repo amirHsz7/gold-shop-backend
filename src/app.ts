@@ -34,6 +34,9 @@ import adminHomeRoutes from "./routes/admin-home.routes.js";
 import adminPricingSettingsRoutes from "./routes/admin-pricing-settings.routes.js";
 import orderSmsRoutes from "./routes/admin-order-sms.routes.js";
 import { superAdminMiddleware } from "./middlewares/super-admin.middleware.js";
+import adminOrderRoutes from "./routes/admin-order.routes.js";
+
+
 const app = express();
 
 if (process.env.TRUST_PROXY) {
@@ -130,6 +133,14 @@ app.use(
   superAdminMiddleware,
   orderSmsRoutes,
 );
+
+app.use(
+  "/admin/orders", 
+  authMiddleware, 
+  adminMiddleware, 
+  adminOrderRoutes
+);
+
 
 app.post("/_test-upload", uploadSingleImage("image"), async (req, res, next) => {
   try {
