@@ -5,8 +5,10 @@ import { validate } from "../middlewares/validate.middleware.js";
 import { AppError } from "../utils/app-error.js";
 import { OrderStatus } from "../generated/prisma/client.js";
 import { validateQuery } from "../middlewares/validate-query.middleware.js";
+import adminOrderReviewRoutes from "./admin-order-review.routes.js";
 
 const router = Router();
+router.use("/:id", adminOrderReviewRoutes);
 
 const positiveIntQuery = z.string().trim()
   .transform(value => value
@@ -77,7 +79,8 @@ router.get("/:id", async (req, res) => {
       orderNumber: true,
       status: true,
       createdAt: true,
-
+      refundRequestedAt: true,
+      refundRefId: true,
       user: {
         select: { fullName: true, mobile: true },
       },

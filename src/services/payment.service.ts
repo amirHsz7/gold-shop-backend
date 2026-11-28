@@ -1,10 +1,8 @@
 import { prisma } from "../lib/prisma.js";
 import { MockPaymentProvider } from "../payments/mock-payment.provider.js";
 import { AppError } from "../utils/app-error.js";
-import { ADMIN_ROLES } from "../utils/roles.js";
 import { releaseOrderReservation } from "./release-reservation.service.js";
-
-const CALLBACK_GRACE_PERIOD_MS = 5 * 60 * 1000;
+import { preparePaidOrder } from "./prepare-paid-order.service.js";
 
 const paymentProvider = new MockPaymentProvider();
 
@@ -271,33 +269,39 @@ export const processPaymentCallback = async ({
     // از اینجا به بعد Provider موفقیت پرداخت را تأیید کرده است.
     // حتی اگر سفارش منقضی شده باشد، موفقیت واقعی پرداخت را ثبت می‌کنیم.
     const markForReview = async (reason: string) => {
+      const isExtraPayment = Boolean(
+        order.cancelledAt || order.stockCommittedAt,
+      );
+
+      const reviewReason = isExtraPayment
+        ? "EXTRA_PAYMENT_REQUIRES_REVIEW"
+        : reason;
+
       await tx.payment.update({
-        where: {
-          id: payment.id,
-        },
+        where: { id: payment.id },
         data: {
           status: "SUCCESS",
           refId: verification.refId,
           cardPan: verification.cardPan,
-          failureReason: reason,
+          failureReason: reviewReason,
           paidAt: now,
         },
       });
 
-      await tx.order.update({
-        where: {
-          id: order.id,
-        },
-        data: {
-          status: "NEEDS_REVIEW",
-          refundPending: true,
-        },
-      });
+      if (!isExtraPayment) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: "NEEDS_REVIEW",
+            refundPending: true,
+          },
+        });
+      }
 
       return {
         outcome: "NEEDS_REVIEW" as const,
         orderId: order.id,
-        reason,
+        reason: reviewReason,
       };
     };
 
@@ -310,7 +314,7 @@ export const processPaymentCallback = async ({
     ) {
       return markForReview("ORDER_NOT_PAYABLE");
     }
-    
+
     if (!order.reservationExpiresAt) {
       return markForReview("MISSING_RESERVATION_DEADLINE");
     }
@@ -465,61 +469,7 @@ export const processPaymentCallback = async ({
       },
     });
 
-    // انتقال سفارش به مرحله آماده‌سازی
-    const paidOrder = await tx.order.update({
-      where: { id: order.id },
-      data: {
-        status: "PREPARING",
-        stockCommittedAt: now,
-        paidAt: now,
-      },
-      select: {
-        user: {
-          select: { mobile: true },
-        },
-        items: {
-          select: {
-            productName: true,
-            weight: true,
-            quantity: true,
-          },
-        },
-      },
-    });
-
-    const recipients = await tx.user.findMany({
-      where: {
-        role: { in: ADMIN_ROLES },
-        receivesOrderSms: true,
-      },
-      select: { mobile: true },
-    });
-
-    const lines = paidOrder.items.map(
-      (item) =>
-        `${item.productName}، ${item.weight.toString()} گرم × ${item.quantity}`,
-    );
-
-    const adminText =
-      `سفارش ${order.orderNumber} پرداخت شد.\n${lines.join("\n")}`;
-
-    await tx.smsLog.createMany({
-      data: [
-        {
-          orderId: order.id,
-          type: "ORDER_PAID_CUSTOMER",
-          recipient: paidOrder.user.mobile,
-          text: `خرید شما با شماره سفارش ${order.orderNumber} ثبت شد و در حال آماده‌سازی است.`,
-        },
-        ...recipients.map(({ mobile }) => ({
-          orderId: order.id,
-          type: "ORDER_NEW_ADMIN" as const,
-          recipient: mobile,
-          text: adminText,
-        })),
-      ],
-      skipDuplicates: true,
-    });
+    await preparePaidOrder(tx, order, now, now);
 
     return {
       outcome: "PAYMENT_SUCCESS" as const,

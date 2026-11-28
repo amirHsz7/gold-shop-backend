@@ -42,6 +42,8 @@ router.get("/", validateQuery(listMyOrdersQuery), async (_req, res) => {
         paidAt: true,
         shippedAt: true,
         trackingCode: true,
+        refundPending: true,
+        refundedAt: true,
       },
     }),
     prisma.order.count({ where }),

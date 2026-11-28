@@ -506,6 +506,8 @@ model Payment {
   authority     String? // شناسه‌ی تراکنش درگاه
   checkoutUrl   String?
   refId         String? // کد پیگیری بانک
+  refundRequestedAt DateTime?
+  refundRefId       String?   @db.VarChar(100)
   cardPan       String? // فقط ۴ رقم آخر یا ماسک‌شده
   failureReason String?
   expiresAt     DateTime // پایان نگه‌داشتن موجودی
