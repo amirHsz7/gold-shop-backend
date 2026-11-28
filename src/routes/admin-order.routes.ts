@@ -79,8 +79,6 @@ router.get("/:id", async (req, res) => {
       orderNumber: true,
       status: true,
       createdAt: true,
-      refundRequestedAt: true,
-      refundRefId: true,
       user: {
         select: { fullName: true, mobile: true },
       },
@@ -130,6 +128,8 @@ router.get("/:id", async (req, res) => {
           amount: true,
           status: true,
           refId: true,
+          refundRequestedAt: true,
+          refundRefId: true,
           failureReason: true,
           createdAt: true,
           paidAt: true,
