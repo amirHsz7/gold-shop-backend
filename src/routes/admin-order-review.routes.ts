@@ -209,7 +209,9 @@ async function reviewOrder(
     }
 
     await preparePaidOrder(tx, order, paidAt, now);
-    await audit("ORDER_REVIEW_APPROVED", {});
+    await audit("ORDER_REVIEW_APPROVED", {
+    stockReleasedAt: order.stockReleasedAt!.toISOString(),
+    });
     return { status: "PREPARING", refundedAt: null };
   });
 }

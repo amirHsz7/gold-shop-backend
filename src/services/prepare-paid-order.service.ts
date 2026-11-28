@@ -12,6 +12,7 @@ export async function preparePaidOrder(
     data: {
       status: "PREPARING",
       stockCommittedAt: committedAt,
+      stockReleasedAt: null,
       paidAt,
       refundPending: false,
     },

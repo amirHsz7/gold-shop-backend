@@ -75,6 +75,20 @@ const isPrismaError = (
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === code;
 
+  const isRetryableOrderConflict = (error: unknown): boolean => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === "P2034") return true;
+  if (error.code !== "P2010") return false;
+
+  const adapterError = error.meta?.driverAdapterError;
+  if (!(adapterError instanceof Error)) return false;
+
+  const cause = adapterError.cause;
+  return typeof cause === "object" && cause !== null &&
+    "originalCode" in cause &&
+    (cause.originalCode === "40001" || cause.originalCode === "40P01");
+};
+
 export const createOrder = async ({
   userId,
   idempotencyKey,
@@ -501,7 +515,8 @@ export const createOrder = async ({
       }
 
       // Serialization failure
-      if (isPrismaError(error, "P2034") && attempt < 3) {
+      if (isRetryableOrderConflict(error)) {
+        if (attempt === 3) break;
         continue;
       }
 
